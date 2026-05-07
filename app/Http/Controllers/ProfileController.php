@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Support\MobileNumber;
+use App\Support\PersonalStorageQuota;
+use App\Support\PlanPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -14,8 +16,12 @@ class ProfileController extends Controller
 {
     public function edit(Request $request): View
     {
+        $user = $request->user();
+
         return view('profile.edit', [
-            'user' => $request->user(),
+            'user' => $user,
+            'planProfile' => PlanPolicy::profileForUser($user),
+            'storageProfile' => PersonalStorageQuota::profileForUser($user),
         ]);
     }
 
@@ -29,6 +35,7 @@ class ProfileController extends Controller
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'mobile' => ['nullable', 'string', 'max:20'],
             'full_name' => ['nullable', 'string', 'max:120'],
+            'allow_receive_no_expiry' => ['nullable', 'boolean'],
             'current_password' => ['nullable', 'required_with:password', 'current_password'],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
         ]);
@@ -64,6 +71,13 @@ class ProfileController extends Controller
         $user->email = $validated['email'];
         $user->mobile = $normalizedMobile;
         $user->full_name = $validated['full_name'] ?? null;
+        $user->allow_receive_no_expiry = ($user->allow_receive_no_expiry ?? false);
+
+        if (PlanPolicy::profileForUser($user)['allow_personal_storage'] ?? false) {
+            $user->allow_receive_no_expiry = $request->boolean('allow_receive_no_expiry');
+        } else {
+            $user->allow_receive_no_expiry = false;
+        }
 
         if ($emailChanged) {
             $user->email_verified_at = null;

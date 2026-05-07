@@ -60,6 +60,11 @@ class InboxController extends Controller
             ->filter(fn (array $thread) => $thread['user'] !== null)
             ->values();
 
+        $storageThread = $this->personalStorageThread($userId);
+        if ($storageThread !== null) {
+            $threads = collect([$storageThread])->merge($threads)->values();
+        }
+
         $filteredThreads = $this->filterThreads($threads, $search);
         $activeThread = $filteredThreads->first();
 
@@ -85,6 +90,10 @@ class InboxController extends Controller
 
         return $threads
             ->filter(function (array $thread) use ($search): bool {
+                if (($thread['type'] ?? 'user') === 'storage') {
+                    return str_contains(mb_strtolower((string) ($thread['label'] ?? '')), $search);
+                }
+
                 $user = $thread['user'];
 
                 return str_contains(mb_strtolower((string) $user->username), $search)
@@ -93,5 +102,34 @@ class InboxController extends Controller
                     || str_contains(mb_strtolower((string) $user->mobile), $search);
             })
             ->values();
+    }
+
+    private function personalStorageThread(int $userId): ?array
+    {
+        $latestSend = FileSend::query()
+            ->with('file')
+            ->where('sender_id', $userId)
+            ->where('receiver_id', $userId)
+            ->whereHas('file', fn ($query) => $query->where('is_personal_storage', true))
+            ->latest()
+            ->first();
+
+        if (! $latestSend) {
+            return null;
+        }
+
+        $label = app()->getLocale() === 'fa' ? 'فضای شخصی' : 'Personal storage';
+
+        return [
+            'type' => 'storage',
+            'label' => $label,
+            'user' => null,
+            'latest' => $latestSend,
+            'unread' => AppNotification::query()
+                ->where('user_id', $userId)
+                ->where('type', 'personal_storage_received')
+                ->whereNull('read_at')
+                ->count(),
+        ];
     }
 }

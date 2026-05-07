@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\ScanUploadedFileJob;
 use App\Mail\FileReceivedMail;
 use App\Models\AppNotification;
+use App\Models\FileStorageAccess;
 use App\Models\FileSend;
 use App\Models\Setting;
 use App\Models\SharedFile;
@@ -24,6 +25,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Throwable;
 
@@ -48,6 +50,27 @@ class FileSendController extends Controller
             : null;
         $receiverLocked = $prefilledReceiverUser !== null;
         $personalStorageEnabled = (bool) ($planProfile['allow_personal_storage'] ?? false);
+        $senderNoExpiryCapabilities = $this->senderNoExpiryCapabilities($request->user());
+        $prefilledReceiverCapabilities = $prefilledReceiverUser
+            ? $this->receiverSendCapabilities([$prefilledReceiverUser])
+            : $this->emptyReceiverSendCapabilities();
+        $effectiveExpireOptions = $receiverLocked
+            ? $this->expireOptions(
+                $defaultExpireHours,
+                $this->allowedExpireOptionsForSend(
+                    $planProfile['expire_options'],
+                    $prefilledReceiverCapabilities,
+                    (bool) ($senderNoExpiryCapabilities['allow_never_expire'] ?? false)
+                )
+            )
+            : $this->expireOptions(
+                $defaultExpireHours,
+                $this->allowedExpireOptionsForSend(
+                    $planProfile['expire_options'],
+                    $this->emptyReceiverSendCapabilities(),
+                    (bool) ($senderNoExpiryCapabilities['allow_never_expire'] ?? false)
+                )
+            );
         $defaultDestination = $personalStorageEnabled
             && ! $receiverLocked
             && $request->query('destination') === 'storage'
@@ -58,13 +81,16 @@ class FileSendController extends Controller
             'maxFileSizeMb' => $effectiveMaxFileSizeMb,
             'allowedExtensions' => Setting::getValue('allowed_extensions', ''),
             'defaultExpireHours' => $defaultExpireHours,
-            'expireOptions' => $this->expireOptions($defaultExpireHours, $planProfile['expire_options']),
+            'expireOptions' => $effectiveExpireOptions,
+            'senderExpireOptionValues' => array_values($planProfile['expire_options']),
+            'allExpireOptions' => $this->expireOptions($defaultExpireHours, PlanPolicy::EXPIRE_OPTION_VALUES),
             'publicLinkFeatureEnabled' => $publicLinkFeatureEnabled,
             'publicLinkFeatureNotice' => $publicLinkFeatureNotice,
             'chunkUploadThresholdBytes' => max(1, (int) Setting::getValue('chunk_upload_threshold_mb', '8')) * 1024 * 1024,
             'chunkUploadSizeBytes' => max(1, (int) Setting::getValue('chunk_upload_size_mb', '2')) * 1024 * 1024,
             'prefilledReceiver' => $receiverLocked ? $prefilledReceiverUser->username : $prefilledReceiver,
             'prefilledReceiverUser' => $prefilledReceiverUser,
+            'prefilledReceiverCapabilities' => $prefilledReceiverCapabilities,
             'receiverLocked' => $receiverLocked,
             'personalStorageEnabled' => $personalStorageEnabled,
             'defaultDestination' => $defaultDestination,
@@ -90,15 +116,14 @@ class FileSendController extends Controller
         $rules = [
             'destination' => ['nullable', 'string', 'in:send,storage'],
             'message' => ['nullable', 'string', 'max:1000'],
-            'file' => ['nullable', 'file', 'required_without:uploaded_file_token', 'max:'.($maxFileSizeMb * 1024)],
-            'uploaded_file_token' => ['nullable', 'string', 'required_without:file', 'max:120'],
+            'file' => ['nullable', 'file', 'max:'.($maxFileSizeMb * 1024)],
+            'uploaded_file_token' => ['nullable', 'string', 'max:120'],
         ];
 
         if ($destination === 'send') {
-            $allowedExpireOptions = $planProfile['expire_options'];
             $rules += [
                 'receiver' => ['required', 'string', 'max:255'],
-                'expire_option' => ['required', 'string', 'in:'.implode(',', $allowedExpireOptions)],
+                'expire_option' => ['required', 'string', Rule::in(PlanPolicy::EXPIRE_OPTION_VALUES)],
                 'custom_expires_at' => ['nullable', 'date', 'required_if:expire_option,custom', 'after:now'],
                 'download_password' => ['nullable', 'string', 'min:4', 'max:120', 'confirmed'],
                 'public_link_enabled' => ['nullable', 'boolean'],
@@ -125,15 +150,26 @@ class FileSendController extends Controller
             ]);
         }
 
-        $uploadData = $this->resolveUploadData($request, $validated, $maxFileSizeMb, $allowedExtensions);
-
-        if (isset($uploadData['error'])) {
-            return back()->withInput()->withErrors([
-                'file' => (string) $uploadData['error'],
-            ]);
-        }
-
         if ($destination === 'storage') {
+            $hasUploadInput = ! empty($validated['uploaded_file_token']) || $request->hasFile('file');
+            $storageMessage = trim((string) ($validated['message'] ?? ''));
+
+            if (! $hasUploadInput && $storageMessage === '') {
+                return back()->withInput()->withErrors([
+                    'message' => __('messages.personal_storage.message_or_file_required'),
+                ]);
+            }
+
+            $uploadData = $hasUploadInput
+                ? $this->resolveUploadData($request, $validated, $maxFileSizeMb, $allowedExtensions)
+                : $this->buildTextNoteUploadData($storageMessage);
+
+            if (isset($uploadData['error'])) {
+                return back()->withInput()->withErrors([
+                    $hasUploadInput ? 'file' : 'message' => (string) $uploadData['error'],
+                ]);
+            }
+
             if (! PersonalStorageQuota::canStoreUpload($request->user(), (int) $uploadData['size'])) {
                 if (! empty($uploadData['storage_path']) && Storage::exists((string) $uploadData['storage_path'])) {
                     Storage::delete((string) $uploadData['storage_path']);
@@ -157,18 +193,35 @@ class FileSendController extends Controller
                 'extension' => (string) ($uploadData['extension'] ?? ''),
                 'size' => (int) $uploadData['size'],
                 'storage_path' => (string) $uploadData['storage_path'],
-                'checksum' => hash_file('sha256', Storage::path((string) $uploadData['storage_path'])),
+                'checksum' => (string) ($uploadData['checksum'] ?? hash_file('sha256', Storage::path((string) $uploadData['storage_path']))),
                 'expires_at' => null,
                 'status' => SharedFile::STATUS_ACTIVE,
-                'security_scan_status' => SharedFile::SECURITY_SCAN_PENDING,
+                'security_scan_status' => (string) ($uploadData['security_scan_status'] ?? SharedFile::SECURITY_SCAN_PENDING),
+                'security_scanned_at' => $uploadData['security_scanned_at'] ?? null,
                 'download_password_hash' => null,
             ]);
 
+        if (($uploadData['security_scan_status'] ?? SharedFile::SECURITY_SCAN_PENDING) === SharedFile::SECURITY_SCAN_PENDING) {
             ScanUploadedFileJob::dispatch($sharedFile->id);
+        }
 
-            return redirect()
-                ->route('storage.index')
-                ->with('status', __('messages.personal_storage.stored'));
+        $this->syncPersonalStorageWorkspaceAccess(
+            $sharedFile,
+            $request->user(),
+            null,
+            FileStorageAccess::CONTEXT_OWNED
+        );
+        $this->recordPersonalStorageExchange(
+            $sharedFile,
+            $request->user(),
+            $storageMessage
+        );
+
+        return redirect()
+            ->route('storage.index')
+                ->with('status', ! empty($uploadData['is_note'])
+                    ? __('messages.personal_storage.stored_note')
+                    : __('messages.personal_storage.stored'));
         }
 
         $receivers = $this->resolveReceivers((string) $validated['receiver']);
@@ -185,27 +238,113 @@ class FileSendController extends Controller
             ]);
         }
 
-        $expiresAt = $this->resolveExpiresAt($validated);
+        $isMultiRecipient = count($receivers['users']) > 1;
+
+        if ($isMultiRecipient && ! ($planProfile['allow_personal_storage'] ?? false)) {
+            return back()->withInput()->withErrors([
+                'receiver' => __('messages.file_send.multi_recipient_requires_storage'),
+            ]);
+        }
+
+        $receiverCapabilities = $this->receiverSendCapabilities($receivers['users']);
+        $senderNoExpiryCapabilities = $this->senderNoExpiryCapabilities($request->user());
+        $allowedExpireOptions = $this->allowedExpireOptionsForSend(
+            $planProfile['expire_options'],
+            $receiverCapabilities,
+            (bool) ($senderNoExpiryCapabilities['allow_never_expire'] ?? false)
+        );
+        $selectedExpireOption = (string) ($validated['expire_option'] ?? 'default');
+
+        if (! in_array($selectedExpireOption, $allowedExpireOptions, true)) {
+            return back()->withInput()->withErrors([
+                'expire_option' => __('messages.file_send.expire_not_allowed'),
+            ]);
+        }
+
+        $hasUploadInput = ! empty($validated['uploaded_file_token']) || $request->hasFile('file');
+        $sendMessage = trim((string) ($validated['message'] ?? ''));
+        $allowNoteWithoutFile = (bool) ($receiverCapabilities['allow_note_without_file'] ?? false);
+
+        if (! $hasUploadInput && ! $allowNoteWithoutFile) {
+            return back()->withInput()->withErrors([
+                'file' => __('messages.upload.file_missing'),
+            ]);
+        }
+
+        if (! $hasUploadInput && $sendMessage === '') {
+            return back()->withInput()->withErrors([
+                'message' => __('messages.personal_storage.message_or_file_required'),
+            ]);
+        }
+
+        $uploadData = $hasUploadInput
+            ? $this->resolveUploadData($request, $validated, $maxFileSizeMb, $allowedExtensions)
+            : $this->buildTextNoteUploadData($sendMessage);
+
+        if (isset($uploadData['error'])) {
+            return back()->withInput()->withErrors([
+                $hasUploadInput ? 'file' : 'message' => (string) $uploadData['error'],
+            ]);
+        }
+
+        $receiverCapabilities = $this->receiverSendCapabilities($receivers['users'], (int) $uploadData['size']);
+        $senderNoExpiryCapabilities = $this->senderNoExpiryCapabilities($request->user(), (int) $uploadData['size']);
+        $senderCanStoreNoExpiry = (bool) ($senderNoExpiryCapabilities['store_in_sender_storage'] ?? false);
+
+        if (
+            $selectedExpireOption === 'never'
+            && ! ($receiverCapabilities['allow_never_expire'] ?? false)
+            && ! $senderCanStoreNoExpiry
+        ) {
+            return back()->withInput()->withErrors([
+                'expire_option' => __('messages.file_send.receiver_storage_unavailable'),
+            ]);
+        }
+
+        $singleReceiver = count($receivers['users']) === 1 ? $receivers['users'][0] : null;
+        $storeInReceiverStorage = $singleReceiver !== null
+            && $selectedExpireOption === 'never'
+            && (bool) ($receiverCapabilities['store_in_receiver_storage'] ?? false);
+        $storeInSenderStorage = ! $storeInReceiverStorage
+            && $selectedExpireOption === 'never'
+            && $senderCanStoreNoExpiry;
+        $expiresAt = ($storeInReceiverStorage || $storeInSenderStorage) ? null : $this->resolveExpiresAt($validated);
 
         $sharedFile = SharedFile::create([
-            'owner_id' => Auth::id(),
-            'is_personal_storage' => false,
+            'owner_id' => $storeInReceiverStorage ? $singleReceiver->id : Auth::id(),
+            'is_personal_storage' => $storeInReceiverStorage || $storeInSenderStorage,
             'original_name' => (string) $uploadData['original_name'],
             'stored_name' => (string) $uploadData['stored_name'],
             'mime_type' => (string) ($uploadData['mime_type'] ?? ''),
             'extension' => (string) ($uploadData['extension'] ?? ''),
             'size' => (int) $uploadData['size'],
             'storage_path' => (string) $uploadData['storage_path'],
-            'checksum' => hash_file('sha256', Storage::path((string) $uploadData['storage_path'])),
+            'checksum' => (string) ($uploadData['checksum'] ?? hash_file('sha256', Storage::path((string) $uploadData['storage_path']))),
             'expires_at' => $expiresAt,
             'status' => SharedFile::STATUS_ACTIVE,
-            'security_scan_status' => SharedFile::SECURITY_SCAN_PENDING,
+            'security_scan_status' => (string) ($uploadData['security_scan_status'] ?? SharedFile::SECURITY_SCAN_PENDING),
+            'security_scanned_at' => $uploadData['security_scanned_at'] ?? null,
             'download_password_hash' => ! empty($validated['download_password'])
                 ? Hash::make($validated['download_password'])
                 : null,
         ]);
 
-        ScanUploadedFileJob::dispatch($sharedFile->id);
+        if (($uploadData['security_scan_status'] ?? SharedFile::SECURITY_SCAN_PENDING) === SharedFile::SECURITY_SCAN_PENDING) {
+            ScanUploadedFileJob::dispatch($sharedFile->id);
+        }
+
+        if ($sharedFile->is_personal_storage) {
+            $workspaceContext = $storeInReceiverStorage
+                ? FileStorageAccess::CONTEXT_RECEIVED
+                : FileStorageAccess::CONTEXT_SENT;
+
+            $this->syncPersonalStorageWorkspaceAccess(
+                $sharedFile,
+                $request->user(),
+                $singleReceiver,
+                $workspaceContext
+            );
+        }
 
         $publicLinkRequested = $request->boolean('public_link_enabled');
         $publicLinkAllowed = Setting::getValue('public_link_enabled', 'false') === 'true'
@@ -294,8 +433,8 @@ class FileSendController extends Controller
         ];
 
         return collect($allowedOptions)
-            ->filter(fn (string $value) => array_key_exists($value, $labels))
-            ->mapWithKeys(fn (string $value) => [$value => $labels[$value]])
+            ->filter(fn (mixed $value) => is_string($value) && array_key_exists($value, $labels))
+            ->mapWithKeys(fn (mixed $value) => [(string) $value => $labels[(string) $value]])
             ->all();
     }
 
@@ -398,7 +537,88 @@ class FileSendController extends Controller
                     $builder->orWhere('mobile', $normalizedMobile);
                 }
             })
-            ->first(['id', 'username', 'full_name', 'email', 'mobile']);
+            ->first(['id', 'username', 'full_name', 'email', 'mobile', 'allow_receive_no_expiry']);
+    }
+
+    private function senderNoExpiryCapabilities(User $user, ?int $incomingSize = null): array
+    {
+        $planProfile = PlanPolicy::profileForUser($user);
+        $storageProfile = PersonalStorageQuota::profileForUser($user);
+        $supportsPersonalStorage = (bool) ($planProfile['allow_personal_storage'] ?? false);
+        $supportsNeverExpire = (bool) ($planProfile['allow_never_expire'] ?? false);
+        $storageFull = $supportsPersonalStorage
+            && $storageProfile['quota_bytes'] !== null
+            && (int) ($storageProfile['remaining_bytes'] ?? 0) < 1;
+        $canFitIncoming = $supportsPersonalStorage
+            && ! $storageFull
+            && ($incomingSize === null || PersonalStorageQuota::canStoreUpload($user, $incomingSize));
+
+        return [
+            'allow_never_expire' => $supportsNeverExpire && $canFitIncoming,
+            'store_in_sender_storage' => $supportsNeverExpire && $canFitIncoming,
+            'storage_full' => $storageFull,
+        ];
+    }
+
+    private function syncPersonalStorageWorkspaceAccess(
+        SharedFile $file,
+        User $sender,
+        ?User $receiver = null,
+        string $ownerContext = FileStorageAccess::CONTEXT_OWNED
+    ): void {
+        if (! $file->is_personal_storage) {
+            return;
+        }
+
+        FileStorageAccess::query()->updateOrCreate(
+            [
+                'file_id' => $file->id,
+                'user_id' => $file->owner_id,
+            ],
+            [
+                'role' => FileStorageAccess::ROLE_OWNER,
+                'context' => $ownerContext,
+            ]
+        );
+
+        $senderProfile = PlanPolicy::profileForUser($sender);
+        $senderCanUseWorkspace = (bool) ($senderProfile['allow_personal_storage'] ?? false);
+
+        if ($senderCanUseWorkspace && $sender->id !== $file->owner_id) {
+            FileStorageAccess::query()->updateOrCreate(
+                [
+                    'file_id' => $file->id,
+                    'user_id' => $sender->id,
+                ],
+                [
+                    'role' => FileStorageAccess::ROLE_MANAGER,
+                    'context' => FileStorageAccess::CONTEXT_SENT,
+                ]
+            );
+        }
+
+        if (! $receiver || $receiver->id === $file->owner_id) {
+            return;
+        }
+
+        $receiverProfile = PlanPolicy::profileForUser($receiver);
+        $receiverCanUseWorkspace = (bool) ($receiverProfile['allow_personal_storage'] ?? false)
+            && (bool) $receiver->allow_receive_no_expiry;
+
+        if (! $receiverCanUseWorkspace) {
+            return;
+        }
+
+        FileStorageAccess::query()->updateOrCreate(
+            [
+                'file_id' => $file->id,
+                'user_id' => $receiver->id,
+            ],
+            [
+                'role' => FileStorageAccess::ROLE_MANAGER,
+                'context' => FileStorageAccess::CONTEXT_RECEIVED,
+            ]
+        );
     }
 
     private function notifyReceiver(FileSend $fileSend): void
@@ -454,6 +674,35 @@ class FileSendController extends Controller
                 ]);
             }
         }
+    }
+
+    private function recordPersonalStorageExchange(SharedFile $file, User $user, string $message = ''): void
+    {
+        $fileSend = FileSend::query()->create([
+            'file_id' => $file->id,
+            'sender_id' => $user->id,
+            'receiver_id' => $user->id,
+            'message' => $message !== '' ? $message : null,
+        ]);
+
+        $title = app()->getLocale() === 'fa'
+            ? 'فایل به فضای ذخیره‌سازی ارسال شد'
+            : 'File sent to personal storage';
+        $body = app()->getLocale() === 'fa'
+            ? 'ارسال جدید شما در تبادل فضای شخصی ثبت شد.'
+            : 'Your new send was recorded in the personal storage exchange.';
+
+        AppNotification::create([
+            'user_id' => $user->id,
+            'type' => 'personal_storage_received',
+            'title' => $title,
+            'body' => $body,
+            'payload' => [
+                'file_send_id' => $fileSend->id,
+                'storage_thread' => true,
+                'file_id' => $file->id,
+            ],
+        ]);
     }
 
     private function resolveUploadData(
@@ -540,5 +789,119 @@ class FileSendController extends Controller
     private function chunkTokenCacheKey(string $token): string
     {
         return 'chunk_upload_token:'.$token;
+    }
+
+    private function buildTextNoteUploadData(string $content): array
+    {
+        $normalizedContent = trim($content);
+
+        if ($normalizedContent === '') {
+            return ['error' => __('messages.personal_storage.message_or_file_required')];
+        }
+
+        $directory = 'files/'.now()->format('Y/m');
+        $storedName = Str::uuid().'.txt';
+        $storagePath = $directory.'/'.$storedName;
+        $originalName = 'note-'.now()->format('Ymd-His').'.txt';
+
+        Storage::makeDirectory($directory);
+
+        if (! Storage::put($storagePath, $normalizedContent)) {
+            return ['error' => __('messages.upload.move_failed')];
+        }
+
+        return [
+            'original_name' => $originalName,
+            'stored_name' => $storedName,
+            'mime_type' => 'text/plain',
+            'extension' => 'txt',
+            'size' => strlen($normalizedContent),
+            'storage_path' => $storagePath,
+            'checksum' => hash('sha256', $normalizedContent),
+            'security_scan_status' => SharedFile::SECURITY_SCAN_CLEAN,
+            'security_scanned_at' => now(),
+            'is_note' => true,
+        ];
+    }
+
+    private function receiverSendCapabilities(array $users, ?int $incomingSize = null): array
+    {
+        if ($users === []) {
+            return $this->emptyReceiverSendCapabilities();
+        }
+
+        if (count($users) !== 1) {
+            $supportsPersonalStorage = collect($users)->every(function (User $user): bool {
+                return (bool) (PlanPolicy::profileForUser($user)['allow_personal_storage'] ?? false);
+            });
+
+            return [
+                'allow_personal_storage' => $supportsPersonalStorage,
+                'allow_never_expire' => false,
+                'allow_note_without_file' => false,
+                'store_in_receiver_storage' => false,
+                'storage_near_capacity' => false,
+                'storage_full' => false,
+            ];
+        }
+
+        $user = $users[0];
+        $planProfile = PlanPolicy::profileForUser($user);
+        $storageProfile = PersonalStorageQuota::profileForUser($user);
+        $supportsPersonalStorage = (bool) ($planProfile['allow_personal_storage'] ?? false);
+        $receiverAllowsNoExpiry = (bool) $user->allow_receive_no_expiry;
+        $storageFull = $supportsPersonalStorage
+            && $storageProfile['quota_bytes'] !== null
+            && (int) ($storageProfile['remaining_bytes'] ?? 0) < 1;
+        $canFitIncoming = $supportsPersonalStorage
+            && ! $storageFull
+            && ($incomingSize === null || PersonalStorageQuota::canStoreUpload($user, $incomingSize));
+
+        return [
+            'allow_personal_storage' => $supportsPersonalStorage,
+            'allow_never_expire' => $canFitIncoming && $receiverAllowsNoExpiry,
+            'allow_note_without_file' => $supportsPersonalStorage && ! $storageFull,
+            'store_in_receiver_storage' => $canFitIncoming && $receiverAllowsNoExpiry,
+            'storage_near_capacity' => $supportsPersonalStorage && ! $storageFull && PersonalStorageQuota::isNearCapacity($user),
+            'storage_full' => $storageFull,
+            'receiver_prefers_no_expiry' => $receiverAllowsNoExpiry,
+        ];
+    }
+
+    private function emptyReceiverSendCapabilities(): array
+    {
+        return [
+            'allow_personal_storage' => false,
+            'allow_never_expire' => false,
+            'allow_note_without_file' => false,
+            'store_in_receiver_storage' => false,
+            'storage_near_capacity' => false,
+            'storage_full' => false,
+            'receiver_prefers_no_expiry' => false,
+        ];
+    }
+
+    private function allowedExpireOptionsForSend(
+        array $senderExpireOptions,
+        array $receiverCapabilities,
+        bool $senderCanNeverExpire = false
+    ): array
+    {
+        $options = collect($senderExpireOptions);
+
+        if (($receiverCapabilities['allow_never_expire'] ?? false) || $senderCanNeverExpire) {
+            if (! $options->contains('never')) {
+                $options->push('never');
+            }
+        } else {
+            $options = $options->reject(fn (mixed $value) => (string) $value === 'never')->values();
+        }
+
+        return $options
+            ->map(fn (mixed $value) => (string) $value)
+            ->filter(fn (string $value) => in_array($value, PlanPolicy::EXPIRE_OPTION_VALUES, true))
+            ->unique()
+            ->values()
+            ->all();
     }
 }

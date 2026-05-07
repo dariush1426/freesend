@@ -116,6 +116,11 @@
                                 ]) }}
                             @endif
                         </div>
+                        @if($storageProfile['is_full'] ?? false)
+                            <div class="muted" style="margin-top: 6px; color: #b42318;">{{ __('ui.dashboard.storage_full') }}</div>
+                        @elseif($storageProfile['is_near_capacity'] ?? false)
+                            <div class="muted" style="margin-top: 6px; color: #b42318;">{{ __('ui.dashboard.storage_near_capacity') }}</div>
+                        @endif
                     </div>
                     <a class="button primary" href="{{ route('storage.index') }}">{{ __('ui.dashboard.open_storage') }}</a>
                 </div>

@@ -76,8 +76,12 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/subscriptions/upgrade', [SubscriptionController::class, 'index'])->name('subscriptions.upgrade');
     Route::post('/subscriptions/{plan}/purchase', [SubscriptionController::class, 'purchase'])->name('subscriptions.purchase');
     Route::get('/storage', [PersonalStorageController::class, 'index'])->name('storage.index');
+    Route::post('/storage/folders', [PersonalStorageController::class, 'storeFolder'])->name('storage.folders.store');
+    Route::patch('/storage/folders/{folder}', [PersonalStorageController::class, 'updateFolder'])->name('storage.folders.update');
+    Route::delete('/storage/folders/{folder}', [PersonalStorageController::class, 'destroyFolder'])->name('storage.folders.destroy');
     Route::get('/storage/{file}/preview', [PersonalStorageController::class, 'preview'])->name('storage.preview');
     Route::get('/storage/{file}/download', [PersonalStorageController::class, 'download'])->name('storage.download');
+    Route::patch('/storage/{file}/folder', [PersonalStorageController::class, 'moveToFolder'])->name('storage.folder.update');
     Route::delete('/storage/{file}', [PersonalStorageController::class, 'destroy'])->name('storage.destroy');
     Route::get('/send', [FileSendController::class, 'create'])->name('files.create');
     Route::post('/send', [FileSendController::class, 'store'])->name('files.store');
@@ -90,6 +94,7 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/users/lookup', UserLookupController::class)->name('users.lookup');
     Route::get('/inbox', InboxController::class)->name('inbox');
     Route::get('/history', HistoryController::class)->name('history.index');
+    Route::get('/conversations/storage/personal', [ConversationController::class, 'storage'])->name('conversations.storage');
     Route::get('/conversations/{user}', [ConversationController::class, 'show'])->name('conversations.show');
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -97,6 +102,7 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/profile/verify/email/confirm', [ProfileVerificationController::class, 'verifyEmail'])->name('profile.verify.email.confirm');
     Route::post('/profile/verify/mobile/request', [ProfileVerificationController::class, 'requestMobile'])->name('profile.verify.mobile.request');
     Route::post('/profile/verify/mobile/confirm', [ProfileVerificationController::class, 'verifyMobile'])->name('profile.verify.mobile.confirm');
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::get('/notifications/{notification}', [NotificationController::class, 'open'])->name('notifications.open');
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
     Route::get('/file-sends/{fileSend}/unlock', [FileDownloadUnlockController::class, 'show'])->name('file-sends.unlock');

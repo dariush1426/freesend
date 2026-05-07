@@ -32,6 +32,50 @@
                     <input id="mobile" name="mobile" value="{{ old('mobile', $user->mobile) }}">
                 </div>
 
+                <div class="panel" style="padding: 16px; margin-top: 18px; background: rgba(15, 118, 110, 0.03);">
+                    <h2 style="margin-top: 0;">{{ __('ui.profile.receiving_title') }}</h2>
+                    <p class="muted" style="margin-top: 0;">{{ __('ui.profile.receiving_intro') }}</p>
+
+                    @if($planProfile['allow_personal_storage'] ?? false)
+                        <label class="checkbox-card" style="margin-bottom: 12px;">
+                            <input
+                                type="checkbox"
+                                name="allow_receive_no_expiry"
+                                value="1"
+                                @checked((bool) old('allow_receive_no_expiry', $user->allow_receive_no_expiry))
+                            >
+                            <span>{{ __('ui.profile.allow_receive_no_expiry') }}</span>
+                        </label>
+                        <div class="muted" style="margin-bottom: 10px;">{{ __('ui.profile.allow_receive_no_expiry_hint') }}</div>
+
+                        <div class="message-statuses" style="margin-bottom: 10px;">
+                            @if($storageProfile['has_unlimited_quota'])
+                                <span class="badge">{{ __('ui.profile.storage_unlimited_summary') }}</span>
+                            @else
+                                <span class="badge">
+                                    {{ __('ui.profile.storage_usage_summary', [
+                                        'used' => number_format((float) ($storageProfile['used_bytes'] / 1024 / 1024), 1),
+                                        'total' => number_format((int) ($storageProfile['quota_mb'] ?? 0)),
+                                    ]) }}
+                                </span>
+                                <span class="badge">
+                                    {{ __('ui.profile.storage_remaining_summary', [
+                                        'size' => number_format((float) (($storageProfile['remaining_bytes'] ?? 0) / 1024 / 1024), 1),
+                                    ]) }}
+                                </span>
+                            @endif
+                        </div>
+
+                        @if($storageProfile['is_full'] ?? false)
+                            <div class="status" style="margin-bottom: 0;">{{ __('ui.profile.storage_full_warning') }}</div>
+                        @elseif($storageProfile['is_near_capacity'] ?? false)
+                            <div class="status" style="margin-bottom: 0;">{{ __('ui.profile.storage_near_capacity_warning') }}</div>
+                        @endif
+                    @else
+                        <div class="status" style="margin-bottom: 0;">{{ __('ui.profile.receiving_requires_storage') }}</div>
+                    @endif
+                </div>
+
                 <div class="actions">
                     <button class="button primary" type="submit">{{ __('ui.profile.save') }}</button>
                 </div>
@@ -98,6 +142,7 @@
                 <input type="hidden" name="username" value="{{ old('username', $user->username) }}">
                 <input type="hidden" name="email" value="{{ old('email', $user->email) }}">
                 <input type="hidden" name="mobile" value="{{ old('mobile', $user->mobile) }}">
+                <input type="hidden" name="allow_receive_no_expiry" value="{{ old('allow_receive_no_expiry', $user->allow_receive_no_expiry) ? '1' : '0' }}">
 
                 <div class="field">
                     <label for="current_password">{{ __('ui.profile.current_password') }}</label>

@@ -9,6 +9,16 @@ use Illuminate\Http\Request;
 
 class NotificationController extends Controller
 {
+    public function index(Request $request)
+    {
+        return view('notifications.index', [
+            'notifications' => AppNotification::query()
+                ->where('user_id', $request->user()->id)
+                ->latest()
+                ->paginate(20),
+        ]);
+    }
+
     public function open(Request $request, AppNotification $notification): RedirectResponse
     {
         abort_unless($notification->user_id === $request->user()->id, 403);
@@ -36,6 +46,10 @@ class NotificationController extends Controller
             && User::query()->whereKey($senderId)->exists()
         ) {
             return redirect()->route('conversations.show', $senderId);
+        }
+
+        if ($notification->type === 'personal_storage_received') {
+            return redirect()->route('conversations.storage');
         }
 
         return redirect()->route('dashboard');

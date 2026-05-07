@@ -7,12 +7,13 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'username', 'email', 'mobile', 'full_name', 'avatar', 'is_admin', 'password', 'email_verified_at', 'mobile_verified_at'])]
+#[Fillable(['name', 'username', 'email', 'mobile', 'full_name', 'avatar', 'allow_receive_no_expiry', 'is_admin', 'password', 'email_verified_at', 'mobile_verified_at'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -29,6 +30,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'mobile_verified_at' => 'datetime',
+            'allow_receive_no_expiry' => 'boolean',
             'is_admin' => 'boolean',
             'password' => 'hashed',
         ];
@@ -43,6 +45,23 @@ class User extends Authenticatable
     {
         return $this->hasMany(SharedFile::class, 'owner_id')
             ->where('is_personal_storage', true);
+    }
+
+    public function storageAccesses(): HasMany
+    {
+        return $this->hasMany(FileStorageAccess::class, 'user_id');
+    }
+
+    public function accessibleStorageFiles(): BelongsToMany
+    {
+        return $this->belongsToMany(SharedFile::class, 'file_storage_access', 'user_id', 'file_id')
+            ->withPivot(['role', 'context'])
+            ->withTimestamps();
+    }
+
+    public function storageFolders(): HasMany
+    {
+        return $this->hasMany(StorageFolder::class, 'owner_id');
     }
 
     public function sentFiles(): HasMany

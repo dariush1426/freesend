@@ -90,6 +90,7 @@
                             <strong>{{ __('ui.send.dropzone_hint') }}</strong>
                             <div class="muted">{{ __('ui.send.dropzone_or') }} {{ __('ui.send.dropzone_pick') }}</div>
                         </div>
+                        <span class="dropzone-action">{{ __('ui.send.dropzone_pick') }}</span>
                         <input id="file" name="file" type="file" required>
                     </div>
 

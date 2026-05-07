@@ -15,7 +15,7 @@
             || old('public_link_expires_at')
             || old('public_link_max_downloads')
             || old('uploaded_file_token');
-        $wizardExpandedInitially = $hasOldWizardState;
+        $wizardExpandedInitially = $hasOldWizardState || $receiverLocked;
         $selectedDestination = ($receiverLocked || ! $personalStorageEnabled)
             ? 'send'
             : old('destination', $defaultDestination);
@@ -38,11 +38,11 @@
     <section class="wizard-steps">
         <div class="wizard-step">
             <span class="wizard-step-index">1</span>
-            <div><strong>{{ __('ui.send.step_file') }}</strong></div>
+            <div><strong>{{ __('ui.send.step_recipient') }}</strong></div>
         </div>
         <div class="wizard-step">
             <span class="wizard-step-index">2</span>
-            <div><strong>{{ __('ui.send.step_recipient') }}</strong></div>
+            <div><strong>{{ __('ui.send.step_file') }}</strong></div>
         </div>
         <div class="wizard-step">
             <span class="wizard-step-index">3</span>
@@ -94,44 +94,7 @@
                 <input id="uploaded_file_token" name="uploaded_file_token" type="hidden" value="{{ old('uploaded_file_token') }}">
                 <input id="destination-hidden" name="destination" type="hidden" value="{{ $selectedDestination }}">
 
-                <div class="section-block">
-                    <div class="section-heading">
-                        <div class="title-with-help">
-                            <h3>{{ __('ui.send.upload_first_title') }}</h3>
-                            @include('partials.inline-help', ['text' => __('ui.send.upload_first_body').' '.__('ui.send.options_reveal_hint')])
-                        </div>
-                    </div>
-
-                    <div id="file-dropzone" class="file-dropzone">
-                        <div class="dropzone-copy">
-                            <strong>{{ __('ui.send.dropzone_hint') }}</strong>
-                            <div class="muted">{{ __('ui.send.dropzone_or') }} {{ __('ui.send.dropzone_pick') }}</div>
-                        </div>
-
-                        <input id="file" name="file" type="file" required>
-
-                    </div>
-
-                    <div id="file-card" class="panel conversation-card" style="display:none; margin-top:12px; padding:14px;">
-                        <div class="thread-main">
-                            <span class="avatar">F</span>
-                            <div class="meta-stack">
-                                <strong id="file-name">-</strong>
-                                <span id="file-meta" class="muted"></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="chunk-upload-box" class="panel conversation-card" style="display:none; margin-top:12px; padding:14px;">
-                        <strong>{{ __('ui.send.chunk_status') }}</strong>
-                        <div id="chunk-upload-status" class="muted" style="margin-top:8px;">{{ __('ui.send.chunk_ready') }}</div>
-                        <div style="margin-top:10px; height:12px; background:#e8edf3; border-radius:999px; overflow:hidden;">
-                            <div id="chunk-upload-progress" style="width:0%; height:100%; background:linear-gradient(135deg, #0f766e 0%, #149e90 100%);"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="receiver-stage" class="section-block wizard-stage" style="margin-top: 16px;" @unless($wizardExpandedInitially) hidden @endunless>
+                <div id="receiver-stage" class="section-block" style="margin-top: 16px;">
                     <div class="section-heading">
                         <div class="title-with-help">
                             <h3>{{ __('ui.send.receiver_stage_title') }}</h3>
@@ -191,11 +154,73 @@
                     @endif
                     </div>
 
+                    <div id="receiver-capability-note" class="status" style="margin-top: 12px; margin-bottom: 0;" hidden></div>
+
                     @if($personalStorageEnabled)
                         <div id="storage-destination-note" class="status" style="margin-top: 12px; margin-bottom: 0;" @if($selectedDestination !== 'storage') hidden @endif>
                             {{ __('ui.send.destination_storage_body') }}
                         </div>
+                        <div id="storage-note-hint" class="muted" style="margin-top: 10px;" @if($selectedDestination !== 'storage') hidden @endif>
+                            {{ __('ui.send.destination_storage_note_hint') }}
+                        </div>
                     @endif
+                </div>
+
+                <div id="file-stage" class="section-block wizard-stage" @unless($wizardExpandedInitially) hidden @endunless>
+                    <div class="section-heading">
+                        <div class="title-with-help">
+                            <h3>{{ __('ui.send.upload_first_title') }}</h3>
+                            @include('partials.inline-help', ['text' => __('ui.send.upload_first_body')])
+                        </div>
+                    </div>
+
+                    <div id="send-mode-block" class="field" hidden>
+                        <label>{{ __('ui.send.send_mode') }}</label>
+                        <div class="actions" style="align-items: stretch;">
+                            <label class="checkbox-card" style="flex:1;">
+                                <input type="radio" name="send_mode_selector" value="file" checked>
+                                <span>{{ __('ui.send.send_mode_file') }}</span>
+                            </label>
+                            <label class="checkbox-card" style="flex:1;">
+                                <input type="radio" name="send_mode_selector" value="note">
+                                <span>{{ __('ui.send.send_mode_note') }}</span>
+                            </label>
+                        </div>
+                        <div class="muted" style="margin-top: 8px;">{{ __('ui.send.send_mode_note_hint') }}</div>
+                    </div>
+
+                    <div id="file-upload-block">
+                        <div id="file-dropzone" class="file-dropzone">
+                            <div class="dropzone-copy">
+                                <strong>{{ __('ui.send.dropzone_hint') }}</strong>
+                                <div class="muted">{{ __('ui.send.dropzone_or') }} {{ __('ui.send.dropzone_pick') }}</div>
+                            </div>
+                            <span class="dropzone-action">{{ __('ui.send.dropzone_pick') }}</span>
+                            <input id="file" name="file" type="file">
+                        </div>
+
+                        <div id="file-card" class="panel conversation-card" style="display:none; margin-top:12px; padding:14px;">
+                            <div class="thread-main">
+                                <span class="avatar">F</span>
+                                <div class="meta-stack">
+                                    <strong id="file-name">-</strong>
+                                    <span id="file-meta" class="muted"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="chunk-upload-box" class="panel conversation-card" style="display:none; margin-top:12px; padding:14px;">
+                            <strong>{{ __('ui.send.chunk_status') }}</strong>
+                            <div id="chunk-upload-status" class="muted" style="margin-top:8px;">{{ __('ui.send.chunk_ready') }}</div>
+                            <div style="margin-top:10px; height:12px; background:#e8edf3; border-radius:999px; overflow:hidden;">
+                                <div id="chunk-upload-progress" style="width:0%; height:100%; background:linear-gradient(135deg, #0f766e 0%, #149e90 100%);"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="note-only-block" class="status" style="margin-bottom: 0;" hidden>
+                        {{ __('ui.send.send_mode_note_enabled') }}
+                    </div>
                 </div>
 
                 <div id="timing-stage" class="section-block wizard-stage" @unless($wizardExpandedInitially) hidden @endunless>
@@ -208,7 +233,13 @@
 
                     <div class="field">
                         <label for="message">{{ __('ui.send.message') }}</label>
-                        <textarea id="message" name="message" placeholder="{{ __('ui.send.message_placeholder') }}">{{ old('message') }}</textarea>
+                        <textarea
+                            id="message"
+                            name="message"
+                            placeholder="{{ $selectedDestination === 'storage' ? __('ui.send.message_placeholder_storage') : __('ui.send.message_placeholder') }}"
+                            data-send-placeholder="{{ __('ui.send.message_placeholder') }}"
+                            data-storage-placeholder="{{ __('ui.send.message_placeholder_storage') }}"
+                        >{{ old('message') }}</textarea>
                     </div>
 
                     <div id="expiry-settings-grid" class="grid cols-2" @if($selectedDestination === 'storage') hidden @endif>
@@ -324,10 +355,18 @@
             const destinationHiddenInput = document.getElementById('destination-hidden');
             const destinationSelectorInputs = Array.from(sendForm.querySelectorAll('input[name="destination_selector"]'));
             const receiverFields = document.getElementById('receiver-fields');
+            const receiverCapabilityNote = document.getElementById('receiver-capability-note');
             const storageDestinationNote = document.getElementById('storage-destination-note');
+            const storageNoteHint = document.getElementById('storage-note-hint');
+            const fileStage = document.getElementById('file-stage');
+            const fileUploadBlock = document.getElementById('file-upload-block');
+            const sendModeBlock = document.getElementById('send-mode-block');
+            const noteOnlyBlock = document.getElementById('note-only-block');
+            const sendModeInputs = Array.from(sendForm.querySelectorAll('input[name="send_mode_selector"]'));
             const expirySettingsGrid = document.getElementById('expiry-settings-grid');
             const storageExpiryNote = document.getElementById('storage-expiry-note');
             const securityStage = document.getElementById('security-stage');
+            const messageInput = document.getElementById('message');
 
             const routes = {
                 chunkStart: @json(route('uploads.chunk.start')),
@@ -338,11 +377,14 @@
             };
 
             const receiverLocked = @json($receiverLocked);
+            const prefilledReceiverCapabilities = @json($prefilledReceiverCapabilities);
             const shouldRevealInitially = @json((bool) $wizardExpandedInitially);
             const csrfToken = @json(csrf_token());
             const configuredChunkSizeBytes = Number(@json($chunkUploadSizeBytes));
             const chunkSizeBytes = Math.max(256 * 1024, Math.min(configuredChunkSizeBytes || (2 * 1024 * 1024), 5 * 1024 * 1024));
             const storageKeyPrefix = 'freesend:chunk-upload:';
+            const senderExpireOptionValues = @json($senderExpireOptionValues);
+            const allExpireOptions = @json($allExpireOptions);
 
             const summaryReceiverTemplate = @json(__('ui.send.summary_receiver'));
             const summaryDestinationTemplate = @json(__('ui.send.summary_destination'));
@@ -363,8 +405,15 @@
                 summaryPublicOn: @json(__('ui.send.summary_public_on')),
                 summaryPublicOff: @json(__('ui.send.summary_public_off')),
                 summaryStorageDestination: @json(__('ui.send.summary_storage_destination')),
+                summaryNoteOnly: @json(__('ui.send.summary_note_only')),
                 receiverSearchNone: @json(__('ui.send.receiver_search_none')),
                 receiverSearchError: @json(__('ui.send.receiver_search_error')),
+                receiverStorageEnabled: @json(__('ui.send.receiver_storage_enabled')),
+                receiverStorageNoteOnly: @json(__('ui.send.receiver_storage_note_only')),
+                receiverStorageNearCapacity: @json(__('ui.send.receiver_storage_near_capacity')),
+                receiverStorageFull: @json(__('ui.send.receiver_storage_full')),
+                receiverStorageDisabled: @json(__('ui.send.receiver_storage_disabled')),
+                sendModeNoteEnabled: @json(__('ui.send.send_mode_note_enabled')),
                 chunkReady: @json(__('ui.send.chunk_ready')),
                 uploadReady: @json(__('ui.send.upload_ready')),
                 requestFailed: @json(__('ui.send.request_failed')),
@@ -382,6 +431,7 @@
             let lookupTimer = null;
             let lookupAbortController = null;
             let programmaticSubmit = false;
+            let currentReceiverCapabilities = receiverLocked ? prefilledReceiverCapabilities : null;
 
             const interpolate = (template, replacements) => {
                 return Object.entries(replacements).reduce((value, [key, replacement]) => {
@@ -417,6 +467,31 @@
                 return destinationHiddenInput?.value === 'storage' ? 'storage' : 'send';
             };
 
+            const getSendModeValue = () => {
+                const selectedInput = sendModeInputs.find((input) => input.checked);
+                return selectedInput?.value === 'note' ? 'note' : 'file';
+            };
+
+            const normalizedReceiverCapabilities = (capabilities) => ({
+                allow_personal_storage: Boolean(capabilities?.allow_personal_storage),
+                allow_never_expire: Boolean(capabilities?.allow_never_expire),
+                allow_note_without_file: Boolean(capabilities?.allow_note_without_file),
+                storage_near_capacity: Boolean(capabilities?.storage_near_capacity),
+                storage_full: Boolean(capabilities?.storage_full),
+                receiver_prefers_no_expiry: Boolean(capabilities?.receiver_prefers_no_expiry),
+            });
+
+            const currentSendCapabilities = () => {
+                if (getDestinationValue() === 'storage') {
+                    return {
+                        allow_note_without_file: true,
+                        allow_never_expire: true,
+                    };
+                }
+
+                return normalizedReceiverCapabilities(currentReceiverCapabilities);
+            };
+
             const getReceiverValue = () => {
                 if (getDestinationValue() === 'storage') {
                     return translations.summaryStorageDestination;
@@ -444,6 +519,27 @@
                 }
 
                 return value.slice(0, separatorIndex + 1) + ' ' + replacement;
+            };
+
+            const normalizeLookupValue = (value) => String(value || '').trim().toLowerCase();
+
+            const findExactReceiverMatch = (users, query) => {
+                if (!Array.isArray(users) || users.length === 0) {
+                    return null;
+                }
+
+                const normalizedQuery = normalizeLookupValue(query);
+                if (!normalizedQuery) {
+                    return null;
+                }
+
+                return users.find((user) => {
+                    const usernameMatches = normalizeLookupValue(user.username) === normalizedQuery;
+                    const emailMatches = normalizeLookupValue(user.email) === normalizedQuery;
+                    const mobileMatches = normalizeLookupValue(user.mobile) === normalizedQuery;
+
+                    return usernameMatches || emailMatches || mobileMatches;
+                }) || null;
             };
 
             const getUploadStorageKey = (file) => {
@@ -492,6 +588,126 @@
                 publicLinkFields.style.display = publicLinkEnabledInput.checked ? '' : 'none';
             };
 
+            const allowedExpireOptionValues = () => {
+                const values = [...senderExpireOptionValues];
+
+                if (normalizedReceiverCapabilities(currentReceiverCapabilities).allow_never_expire && !values.includes('never')) {
+                    values.push('never');
+                }
+
+                return values.filter((value) => Object.prototype.hasOwnProperty.call(allExpireOptions, value));
+            };
+
+            const rebuildExpireOptions = () => {
+                if (!expireOptionInput) {
+                    return;
+                }
+
+                const currentValue = expireOptionInput.value || 'default';
+                const allowedValues = allowedExpireOptionValues();
+
+                expireOptionInput.innerHTML = '';
+
+                allowedValues.forEach((value) => {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = allExpireOptions[value] || value;
+                    expireOptionInput.appendChild(option);
+                });
+
+                expireOptionInput.value = allowedValues.includes(currentValue) ? currentValue : (allowedValues[0] || 'default');
+                toggleCustomExpire();
+            };
+
+            const renderReceiverCapabilityNote = () => {
+                if (!receiverCapabilityNote || getDestinationValue() === 'storage') {
+                    if (receiverCapabilityNote) {
+                        receiverCapabilityNote.hidden = true;
+                    }
+                    return;
+                }
+
+                const receiverValue = receiverLocked
+                    ? (hiddenReceiverInput?.value.trim() || '')
+                    : (receiverInput?.value.trim() || '');
+
+                if (!receiverValue) {
+                    receiverCapabilityNote.hidden = true;
+                    return;
+                }
+
+                const capabilities = normalizedReceiverCapabilities(currentReceiverCapabilities);
+                if (capabilities.storage_full) {
+                    receiverCapabilityNote.textContent = translations.receiverStorageFull;
+                } else if (capabilities.storage_near_capacity) {
+                    receiverCapabilityNote.textContent = translations.receiverStorageNearCapacity;
+                } else if (capabilities.allow_note_without_file && !capabilities.allow_never_expire) {
+                    receiverCapabilityNote.textContent = translations.receiverStorageNoteOnly;
+                } else {
+                    receiverCapabilityNote.textContent = capabilities.allow_note_without_file
+                        ? translations.receiverStorageEnabled
+                        : translations.receiverStorageDisabled;
+                }
+                receiverCapabilityNote.hidden = false;
+            };
+
+            const resetSelectedFile = () => {
+                if (fileInput) {
+                    fileInput.value = '';
+                }
+
+                if (uploadedFileTokenInput) {
+                    uploadedFileTokenInput.value = '';
+                }
+
+                if (fileCard) {
+                    fileCard.style.display = 'none';
+                }
+
+                if (fileDropzone) {
+                    fileDropzone.classList.remove('has-file');
+                }
+
+                if (chunkUploadBox) {
+                    chunkUploadBox.style.display = 'none';
+                }
+            };
+
+            const toggleSendModeState = () => {
+                const destinationIsStorage = getDestinationValue() === 'storage';
+                const capabilities = currentSendCapabilities();
+                const canSendNoteWithoutFile = Boolean(capabilities.allow_note_without_file);
+                const showSendMode = !destinationIsStorage && canSendNoteWithoutFile;
+                const noteMode = showSendMode && getSendModeValue() === 'note';
+
+                if (sendModeBlock) {
+                    sendModeBlock.hidden = !showSendMode;
+                }
+
+                if (!showSendMode) {
+                    sendModeInputs.forEach((input) => {
+                        input.checked = input.value === 'file';
+                    });
+                }
+
+                if (fileStage) {
+                    fileStage.hidden = !destinationIsStorage && !showSendMode && !receiverLocked && !getReceiverValue();
+                }
+
+                if (fileUploadBlock) {
+                    fileUploadBlock.hidden = noteMode;
+                }
+
+                if (noteOnlyBlock) {
+                    noteOnlyBlock.hidden = !noteMode;
+                    noteOnlyBlock.textContent = translations.sendModeNoteEnabled;
+                }
+
+                if (noteMode) {
+                    resetSelectedFile();
+                }
+            };
+
             const toggleDestinationState = () => {
                 const isStorage = getDestinationValue() === 'storage';
 
@@ -501,6 +717,10 @@
 
                 if (storageDestinationNote) {
                     storageDestinationNote.hidden = !isStorage;
+                }
+
+                if (storageNoteHint) {
+                    storageNoteHint.hidden = !isStorage;
                 }
 
                 if (expirySettingsGrid) {
@@ -515,6 +735,16 @@
                     receiverInput.required = !isStorage;
                 }
 
+                if (fileInput) {
+                    fileInput.required = false;
+                }
+
+                if (messageInput) {
+                    messageInput.placeholder = isStorage
+                        ? (messageInput.dataset.storagePlaceholder || messageInput.placeholder)
+                        : (messageInput.dataset.sendPlaceholder || messageInput.placeholder);
+                }
+
                 if (securityStage) {
                     securityStage.style.display = isStorage ? 'none' : '';
                 }
@@ -522,12 +752,31 @@
                 if (sendSubmit) {
                     sendSubmit.textContent = isStorage ? translations.saveToStorage : translations.sendFile;
                 }
+
+                renderReceiverCapabilityNote();
+                rebuildExpireOptions();
+                toggleSendModeState();
             };
 
             const setWizardExpanded = (expanded) => {
                 wizardStages.forEach((stage) => {
                     stage.hidden = !expanded;
                 });
+            };
+
+            const syncWizardVisibility = () => {
+                const receiverValue = receiverLocked
+                    ? (hiddenReceiverInput?.value.trim() || '')
+                    : (receiverInput?.value.trim() || '');
+                const shouldExpand = shouldRevealInitially
+                    || Boolean(uploadedFileTokenInput.value)
+                    || Boolean(fileInput?.files?.[0])
+                    || Boolean(receiverValue)
+                    || Boolean(messageInput?.value.trim())
+                    || getDestinationValue() === 'storage';
+
+                setWizardExpanded(shouldExpand);
+                toggleSendModeState();
             };
 
             const updateSummary = () => {
@@ -543,9 +792,14 @@
                     ? interpolate(getDestinationValue() === 'storage' ? summaryDestinationTemplate : summaryReceiverTemplate, { value: receiverValue })
                     : translations.summaryReceiverNone;
 
+                const noteOnlyActive = getDestinationValue() === 'storage'
+                    || (currentSendCapabilities().allow_note_without_file && getSendModeValue() === 'note');
+
                 const fileSummary = selectedFile
                     ? interpolate(summaryFileTemplate, { value: selectedFile.name })
-                    : translations.summaryFileNone;
+                    : (noteOnlyActive && messageInput?.value.trim()
+                        ? translations.summaryNoteOnly
+                        : translations.summaryFileNone);
 
                 const expireLabel = getDestinationValue() === 'storage'
                     ? @json(__('ui.send.never_expire'))
@@ -590,6 +844,8 @@
                     receiverName.textContent = '';
                     receiverContact.textContent = '';
                     receiverAvatar.textContent = '?';
+                    currentReceiverCapabilities = null;
+                    toggleSendModeState();
                     return;
                 }
 
@@ -601,6 +857,10 @@
                 receiverName.textContent = user.full_name || fallbackWithoutFullName;
                 receiverContact.textContent = contacts;
                 receiverCard.style.display = 'block';
+                currentReceiverCapabilities = normalizedReceiverCapabilities(user.capabilities);
+                renderReceiverCapabilityNote();
+                rebuildExpireOptions();
+                syncWizardVisibility();
             };
 
             const renderSuggestions = (users) => {
@@ -662,6 +922,7 @@
                         fillReceiverCard(user);
                         closeSuggestions();
                         updateSummary();
+                        syncWizardVisibility();
                         receiverInput.focus();
                     });
 
@@ -809,6 +1070,12 @@
                 chunkUploading = true;
                 currentUploadPromise = uploadFileInChunks(selectedFile)
                     .then((token) => {
+                        if (getSendModeValue() === 'note') {
+                            uploadedFileTokenInput.value = '';
+                            chunkUploadBox.style.display = 'none';
+                            return '';
+                        }
+
                         uploadedFileTokenInput.value = token;
                         setChunkStatus(translations.uploadReady, 100);
                         return token;
@@ -836,9 +1103,9 @@
                     fileCard.style.display = 'none';
                     fileDropzone.classList.remove('has-file');
                     uploadedFileTokenInput.value = '';
-                    fileInput.required = true;
-                    setChunkStatus(translations.chunkReady, 0);
+                    chunkUploadBox.style.display = 'none';
                     updateSummary();
+                    syncWizardVisibility();
                     return;
                 }
 
@@ -847,9 +1114,9 @@
                 fileMeta.textContent = formatBytes(selectedFile.size) + ' | ' + fileType;
                 fileCard.style.display = 'block';
                 fileDropzone.classList.add('has-file');
-                setWizardExpanded(true);
                 setChunkStatus(translations.prepareUpload, 0);
                 updateSummary();
+                syncWizardVisibility();
                 uploadSelectedFile();
             };
             const lookupReceiver = () => {
@@ -869,7 +1136,11 @@
                 if (query.length < 2) {
                     receiverResult.textContent = '';
                     closeSuggestions();
+                    currentReceiverCapabilities = null;
+                    renderReceiverCapabilityNote();
+                    rebuildExpireOptions();
                     fillReceiverCard(null);
+                    syncWizardVisibility();
                     return;
                 }
 
@@ -890,22 +1161,33 @@
 
                         if (!payload.found || users.length === 0) {
                             receiverResult.textContent = translations.receiverSearchNone;
+                            currentReceiverCapabilities = null;
                             fillReceiverCard(null);
                             closeSuggestions();
+                            renderReceiverCapabilityNote();
+                            rebuildExpireOptions();
+                            syncWizardVisibility();
                             return;
                         }
 
                         receiverResult.textContent = interpolate(receiverSearchFoundTemplate, { count: users.length });
                         renderSuggestions(users);
 
-                        const exactUser = users.find((user) => user.username === query || user.email === query || user.mobile === query);
+                        const exactUser = findExactReceiverMatch(users, query);
+                        currentReceiverCapabilities = exactUser ? normalizedReceiverCapabilities(exactUser.capabilities) : null;
+                        renderReceiverCapabilityNote();
+                        rebuildExpireOptions();
                         fillReceiverCard(exactUser || null);
+                        syncWizardVisibility();
                     } catch (error) {
                         if (error.name === 'AbortError') {
                             return;
                         }
 
                         receiverResult.textContent = translations.receiverSearchError;
+                        currentReceiverCapabilities = null;
+                        renderReceiverCapabilityNote();
+                        rebuildExpireOptions();
                         closeSuggestions();
                     }
                 }, 180);
@@ -947,6 +1229,14 @@
             });
 
             receiverInput?.addEventListener('input', lookupReceiver);
+            receiverInput?.addEventListener('input', syncWizardVisibility);
+            sendModeInputs.forEach((input) => {
+                input.addEventListener('change', () => {
+                    toggleSendModeState();
+                    updateSummary();
+                    syncWizardVisibility();
+                });
+            });
             destinationSelectorInputs.forEach((input) => {
                 input.addEventListener('change', () => {
                     if (destinationHiddenInput) {
@@ -954,6 +1244,7 @@
                     }
 
                     toggleDestinationState();
+                    syncWizardVisibility();
                     updateSummary();
                 });
             });
@@ -975,6 +1266,11 @@
                 element?.addEventListener('change', updateSummary);
             });
 
+            messageInput?.addEventListener('input', updateSummary);
+            messageInput?.addEventListener('change', updateSummary);
+            messageInput?.addEventListener('input', syncWizardVisibility);
+            messageInput?.addEventListener('change', syncWizardVisibility);
+
             expireOptionInput?.addEventListener('change', () => {
                 toggleCustomExpire();
                 updateSummary();
@@ -987,6 +1283,9 @@
 
             sendForm.addEventListener('submit', async (event) => {
                 if (programmaticSubmit) {
+                    if (fileInput) {
+                        fileInput.disabled = true;
+                    }
                     sendSubmit.disabled = true;
                     setChunkStatus(translations.uploadFinalize, 100);
                     return;
@@ -998,6 +1297,9 @@
                 }
 
                 if (uploadedFileTokenInput.value) {
+                    if (fileInput) {
+                        fileInput.disabled = true;
+                    }
                     sendSubmit.disabled = true;
                     setChunkStatus(translations.uploadFinalize, 100);
                     return;
@@ -1009,6 +1311,9 @@
 
                     if (uploadedToken) {
                         programmaticSubmit = true;
+                        if (fileInput) {
+                            fileInput.disabled = true;
+                        }
                         sendSubmit.disabled = true;
                         setChunkStatus(translations.uploadFinalize, 100);
 
@@ -1024,14 +1329,19 @@
             toggleCustomExpire();
             togglePublicLinkFields();
             toggleDestinationState();
-            setWizardExpanded(shouldRevealInitially || Boolean(uploadedFileTokenInput.value));
+            rebuildExpireOptions();
+            renderReceiverCapabilityNote();
+            syncWizardVisibility();
+
+            if (!receiverLocked && receiverInput?.value.trim()) {
+                lookupReceiver();
+            }
 
             if (uploadedFileTokenInput.value) {
-                fileInput.required = false;
                 fileDropzone.classList.add('has-file');
                 setChunkStatus(translations.uploadReady, 100);
             } else {
-                setChunkStatus(translations.chunkReady, 0);
+                chunkUploadBox.style.display = 'none';
             }
 
             updateSummary();

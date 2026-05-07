@@ -26,6 +26,7 @@ class AppServiceProvider extends ServiceProvider
             $data = [
                 'layoutUnreadNotifications' => 0,
                 'layoutRecentNotifications' => collect(),
+                'layoutNotificationsTotal' => 0,
             ];
 
             if (Auth::check()) {
@@ -39,8 +40,12 @@ class AppServiceProvider extends ServiceProvider
                 $data['layoutRecentNotifications'] = AppNotification::query()
                     ->where('user_id', $userId)
                     ->latest()
-                    ->limit(6)
+                    ->limit(5)
                     ->get();
+
+                $data['layoutNotificationsTotal'] = AppNotification::query()
+                    ->where('user_id', $userId)
+                    ->count();
             }
 
             $view->with($data);

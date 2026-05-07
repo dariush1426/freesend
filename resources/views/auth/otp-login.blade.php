@@ -3,7 +3,7 @@
 @section('page_title', __('auth_ui.otp_login.page_title'))
 
 @section('content')
-    <section class="panel" style="max-width: 560px; margin: 0 auto;">
+    <section class="panel auth-panel" style="max-width: 560px; margin: 0 auto;">
         <h1>{{ __('auth_ui.otp_login.title') }}</h1>
         <p class="muted">{{ __('auth_ui.otp_login.subtitle') }}</p>
 

@@ -3,7 +3,7 @@
 @section('page_title', __('auth_ui.login.page_title'))
 
 @section('content')
-    <section class="panel" style="max-width: 520px; margin: 0 auto;">
+    <section class="panel auth-panel" style="max-width: 520px; margin: 0 auto;">
         <h1>{{ __('auth_ui.login.title') }}</h1>
         <p class="muted">{{ __('auth_ui.login.subtitle') }}</p>
         <form method="post" action="{{ route('login') }}">

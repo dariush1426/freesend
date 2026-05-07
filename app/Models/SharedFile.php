@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 #[Fillable([
     'owner_id',
@@ -56,6 +57,11 @@ class SharedFile extends Model
         return $this->hasMany(FileSend::class, 'file_id');
     }
 
+    public function workspaceAccesses(): HasMany
+    {
+        return $this->hasMany(FileStorageAccess::class, 'file_id');
+    }
+
     public function readableSize(): string
     {
         $units = ['B', 'KB', 'MB', 'GB'];
@@ -100,5 +106,68 @@ class SharedFile extends Model
     public function isSecurityScanPending(): bool
     {
         return (string) $this->security_scan_status === self::SECURITY_SCAN_PENDING;
+    }
+
+    public function workspaceAccessFor(?User $user): ?FileStorageAccess
+    {
+        if (! $user) {
+            return null;
+        }
+
+        if (! Schema::hasTable('file_storage_access')) {
+            if ($this->owner_id !== $user->id) {
+                return null;
+            }
+
+            $fallback = new FileStorageAccess([
+                'file_id' => $this->id,
+                'user_id' => $user->id,
+                'role' => FileStorageAccess::ROLE_OWNER,
+                'context' => FileStorageAccess::CONTEXT_OWNED,
+            ]);
+            $fallback->exists = true;
+
+            return $fallback;
+        }
+
+        if ($this->owner_id === $user->id) {
+            $loadedAccess = $this->relationLoaded('workspaceAccesses')
+                ? $this->workspaceAccesses->firstWhere('user_id', $user->id)
+                : null;
+
+            if ($loadedAccess) {
+                return $loadedAccess;
+            }
+
+            $fallback = new FileStorageAccess([
+                'file_id' => $this->id,
+                'user_id' => $user->id,
+                'role' => FileStorageAccess::ROLE_OWNER,
+                'context' => FileStorageAccess::CONTEXT_OWNED,
+            ]);
+            $fallback->exists = true;
+
+            return $fallback;
+        }
+
+        if ($this->relationLoaded('workspaceAccesses')) {
+            return $this->workspaceAccesses->firstWhere('user_id', $user->id);
+        }
+
+        return $this->workspaceAccesses()
+            ->where('user_id', $user->id)
+            ->first();
+    }
+
+    public function canUserAccessStorage(?User $user): bool
+    {
+        return $this->workspaceAccessFor($user) !== null;
+    }
+
+    public function canUserManageStorage(?User $user): bool
+    {
+        $access = $this->workspaceAccessFor($user);
+
+        return $access?->canManage() ?? false;
     }
 }

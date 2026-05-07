@@ -7,6 +7,8 @@ use App\Models\User;
 
 class PersonalStorageQuota
 {
+    public const NEAR_CAPACITY_THRESHOLD_PERCENT = 85;
+
     public static function profileForUser(User $user): array
     {
         $planProfile = PlanPolicy::profileForUser($user);
@@ -30,6 +32,10 @@ class PersonalStorageQuota
             'used_bytes' => $usedBytes,
             'remaining_bytes' => $remainingBytes,
             'used_percent' => $usedPercent,
+            'is_near_capacity' => $quotaBytes !== null && $remainingBytes !== null
+                ? ($remainingBytes > 0 && $usedPercent !== null && $usedPercent >= self::NEAR_CAPACITY_THRESHOLD_PERCENT)
+                : false,
+            'is_full' => $quotaBytes !== null && $remainingBytes !== null ? $remainingBytes < 1 : false,
             'has_unlimited_quota' => $quotaBytes === null,
             'files_count' => $filesCount,
         ];
@@ -48,6 +54,21 @@ class PersonalStorageQuota
         }
 
         return ($profile['used_bytes'] + $incomingSize) <= $profile['quota_bytes'];
+    }
+
+    public static function isNearCapacity(User $user, int $thresholdPercent = self::NEAR_CAPACITY_THRESHOLD_PERCENT): bool
+    {
+        $profile = self::profileForUser($user);
+
+        if (! $profile['enabled'] || $profile['quota_bytes'] === null) {
+            return false;
+        }
+
+        if (($profile['remaining_bytes'] ?? 0) < 1) {
+            return false;
+        }
+
+        return (int) ($profile['used_percent'] ?? 0) >= $thresholdPercent;
     }
 
     public static function usedBytes(User $user): int
