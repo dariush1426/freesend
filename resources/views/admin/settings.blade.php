@@ -107,6 +107,109 @@
             </div>
 
             <hr style="border:0;border-top:1px solid #d9e1ea;margin:22px 0;">
+            <h2 style="margin-bottom: 8px;">تنظیمات لندینگ صفحه اصلی</h2>
+            <p class="muted" style="margin-top:0;">متن ها، تصاویر و وزن/اندازه تیترهای بخش معرفی FreeSend را از اینجا تغییر دهید.</p>
+            <div class="grid cols-2">
+                <div class="field">
+                    <label for="landing_hero_badge">برچسب بالای عنوان</label>
+                    <input id="landing_hero_badge" name="landing_hero_badge" value="{{ $settings['landing_hero_badge'] }}">
+                </div>
+                <div class="field">
+                    <label for="landing_hero_heading_tag">نوع تیتر اصلی</label>
+                    <select id="landing_hero_heading_tag" name="landing_hero_heading_tag" style="width:100%;border:1px solid #d9e1ea;border-radius:14px;padding:12px 14px;background:#fff;">
+                        <option value="h1" @selected($settings['landing_hero_heading_tag'] === 'h1')>H1</option>
+                        <option value="h2" @selected($settings['landing_hero_heading_tag'] === 'h2')>H2</option>
+                    </select>
+                </div>
+            </div>
+            <div class="field">
+                <label for="landing_hero_title">عنوان اصلی</label>
+                <input id="landing_hero_title" name="landing_hero_title" value="{{ $settings['landing_hero_title'] }}">
+            </div>
+            <div class="field">
+                <label for="landing_hero_body">متن معرفی کوتاه</label>
+                <textarea id="landing_hero_body" name="landing_hero_body" rows="3">{{ $settings['landing_hero_body'] }}</textarea>
+            </div>
+            <div class="grid cols-2">
+                <div class="field">
+                    <label for="landing_primary_cta">متن دکمه اصلی</label>
+                    <input id="landing_primary_cta" name="landing_primary_cta" value="{{ $settings['landing_primary_cta'] }}">
+                </div>
+                <div class="field">
+                    <label for="landing_secondary_cta">متن دکمه دوم</label>
+                    <input id="landing_secondary_cta" name="landing_secondary_cta" value="{{ $settings['landing_secondary_cta'] }}">
+                </div>
+            </div>
+            <div class="grid cols-3">
+                <div class="field">
+                    <label for="landing_hero_title_size">اندازه تیتر اصلی (px)</label>
+                    <input id="landing_hero_title_size" name="landing_hero_title_size" type="number" min="28" max="72" value="{{ $settings['landing_hero_title_size'] }}">
+                </div>
+                <div class="field">
+                    <label for="landing_hero_title_weight">وزن تیتر اصلی</label>
+                    <select id="landing_hero_title_weight" name="landing_hero_title_weight" style="width:100%;border:1px solid #d9e1ea;border-radius:14px;padding:12px 14px;background:#fff;">
+                        @foreach([500, 600, 700, 800, 900] as $weight)
+                            <option value="{{ $weight }}" @selected((int) $settings['landing_hero_title_weight'] === $weight)>{{ $weight }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="landing_hero_image">تصویر بخش اصلی</label>
+                    <input id="landing_hero_image" name="landing_hero_image" type="file" accept="image/*">
+                    @if(!empty($settings['landing_hero_image_path']))
+                        <img src="{{ route('landing.asset', 'hero') }}" alt="Landing hero" style="margin-top:8px;width:96px;height:64px;border-radius:8px;border:1px solid #d9e1ea;object-fit:cover;">
+                    @endif
+                </div>
+            </div>
+
+            <div class="grid cols-2">
+                <div class="field">
+                    <label for="landing_features_title">عنوان بخش فیچرها</label>
+                    <input id="landing_features_title" name="landing_features_title" value="{{ $settings['landing_features_title'] }}">
+                </div>
+                <div class="field">
+                    <label for="landing_features_body">توضیح بخش فیچرها</label>
+                    <textarea id="landing_features_body" name="landing_features_body" rows="2">{{ $settings['landing_features_body'] }}</textarea>
+                </div>
+            </div>
+            <div class="grid cols-2">
+                <div class="field">
+                    <label for="landing_section_title_size">اندازه تیترهای بخش ها (px)</label>
+                    <input id="landing_section_title_size" name="landing_section_title_size" type="number" min="22" max="48" value="{{ $settings['landing_section_title_size'] }}">
+                </div>
+                <div class="field">
+                    <label for="landing_section_title_weight">وزن تیترهای بخش ها</label>
+                    <select id="landing_section_title_weight" name="landing_section_title_weight" style="width:100%;border:1px solid #d9e1ea;border-radius:14px;padding:12px 14px;background:#fff;">
+                        @foreach([500, 600, 700, 800, 900] as $weight)
+                            <option value="{{ $weight }}" @selected((int) $settings['landing_section_title_weight'] === $weight)>{{ $weight }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
+            @for($featureNumber = 1; $featureNumber <= 3; $featureNumber++)
+                <div class="panel" style="margin:14px 0;padding:14px;">
+                    <h3 style="margin-top:0;">فیچر {{ $featureNumber }}</h3>
+                    <div class="grid cols-2">
+                        <div class="field">
+                            <label for="landing_feature_{{ $featureNumber }}_title">عنوان فیچر</label>
+                            <input id="landing_feature_{{ $featureNumber }}_title" name="landing_feature_{{ $featureNumber }}_title" value="{{ $settings['landing_feature_'.$featureNumber.'_title'] }}">
+                        </div>
+                        <div class="field">
+                            <label for="landing_feature_{{ $featureNumber }}_image">تصویر فیچر</label>
+                            <input id="landing_feature_{{ $featureNumber }}_image" name="landing_feature_{{ $featureNumber }}_image" type="file" accept="image/*">
+                            @if(!empty($settings['landing_feature_'.$featureNumber.'_image_path']))
+                                <img src="{{ route('landing.asset', 'feature-'.$featureNumber) }}" alt="Landing feature {{ $featureNumber }}" style="margin-top:8px;width:96px;height:64px;border-radius:8px;border:1px solid #d9e1ea;object-fit:cover;">
+                            @endif
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="landing_feature_{{ $featureNumber }}_body">متن فیچر</label>
+                        <textarea id="landing_feature_{{ $featureNumber }}_body" name="landing_feature_{{ $featureNumber }}_body" rows="2">{{ $settings['landing_feature_'.$featureNumber.'_body'] }}</textarea>
+                    </div>
+                </div>
+            @endfor
+
+            <hr style="border:0;border-top:1px solid #d9e1ea;margin:22px 0;">
             <h2 style="margin-bottom: 8px;">{{ __('admin.sections.mail') }}</h2>
 
             <div class="grid cols-2">

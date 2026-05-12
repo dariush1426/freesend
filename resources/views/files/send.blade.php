@@ -21,6 +21,7 @@
             : old('destination', $defaultDestination);
     @endphp
 
+    <div class="send-page">
     <section class="page-hero">
         <div class="title-with-help">
             <h1>{{ __('ui.send.hero_title') }}</h1>
@@ -54,7 +55,7 @@
         </div>
     </section>
 
-    <section class="messenger-layout three-columns">
+    <section class="messenger-layout three-columns send-wizard-layout">
         <aside class="wizard-sidebar">
             <div class="panel">
                 <div class="title-with-help">
@@ -94,7 +95,7 @@
                 <input id="uploaded_file_token" name="uploaded_file_token" type="hidden" value="{{ old('uploaded_file_token') }}">
                 <input id="destination-hidden" name="destination" type="hidden" value="{{ $selectedDestination }}">
 
-                <div id="receiver-stage" class="section-block" style="margin-top: 16px;">
+                <div id="receiver-stage" class="section-block send-accordion-stage" data-stage="receiver" style="margin-top: 16px;">
                     <div class="section-heading">
                         <div class="title-with-help">
                             <h3>{{ __('ui.send.receiver_stage_title') }}</h3>
@@ -105,12 +106,12 @@
                     @if($personalStorageEnabled && !$receiverLocked)
                         <div class="field">
                             <label>{{ __('ui.send.destination') }}</label>
-                            <div class="actions" style="align-items: stretch;">
-                                <label class="checkbox-card" style="flex:1;">
+                            <div class="actions send-segmented-control" style="align-items: stretch;">
+                                <label class="checkbox-card send-segment-option" style="flex:1;">
                                     <input type="radio" name="destination_selector" value="send" @checked($selectedDestination !== 'storage')>
                                     <span>{{ __('ui.send.destination_send') }}</span>
                                 </label>
-                                <label class="checkbox-card" style="flex:1;">
+                                <label class="checkbox-card send-segment-option" style="flex:1;">
                                     <input type="radio" name="destination_selector" value="storage" @checked($selectedDestination === 'storage')>
                                     <span>{{ __('ui.send.destination_storage') }}</span>
                                 </label>
@@ -164,9 +165,13 @@
                             {{ __('ui.send.destination_storage_note_hint') }}
                         </div>
                     @endif
+
+                    <div class="send-stage-actions">
+                        <button class="button primary send-stage-next" type="button" data-open-stage="file">{{ __('ui.send.next_upload_file') }}</button>
+                    </div>
                 </div>
 
-                <div id="file-stage" class="section-block wizard-stage" @unless($wizardExpandedInitially) hidden @endunless>
+                <div id="file-stage" class="section-block wizard-stage send-accordion-stage" data-stage="file" @unless($wizardExpandedInitially) hidden @endunless>
                     <div class="section-heading">
                         <div class="title-with-help">
                             <h3>{{ __('ui.send.upload_first_title') }}</h3>
@@ -176,12 +181,12 @@
 
                     <div id="send-mode-block" class="field" hidden>
                         <label>{{ __('ui.send.send_mode') }}</label>
-                        <div class="actions" style="align-items: stretch;">
-                            <label class="checkbox-card" style="flex:1;">
+                        <div class="actions send-segmented-control" style="align-items: stretch;">
+                            <label class="checkbox-card send-segment-option" style="flex:1;">
                                 <input type="radio" name="send_mode_selector" value="file" checked>
                                 <span>{{ __('ui.send.send_mode_file') }}</span>
                             </label>
-                            <label class="checkbox-card" style="flex:1;">
+                            <label class="checkbox-card send-segment-option" style="flex:1;">
                                 <input type="radio" name="send_mode_selector" value="note">
                                 <span>{{ __('ui.send.send_mode_note') }}</span>
                             </label>
@@ -221,9 +226,13 @@
                     <div id="note-only-block" class="status" style="margin-bottom: 0;" hidden>
                         {{ __('ui.send.send_mode_note_enabled') }}
                     </div>
+
+                    <div class="send-stage-actions">
+                        <button class="button primary send-stage-next" type="button" data-open-stage="timing">{{ __('ui.send.next_note_expiry') }}</button>
+                    </div>
                 </div>
 
-                <div id="timing-stage" class="section-block wizard-stage" @unless($wizardExpandedInitially) hidden @endunless>
+                <div id="timing-stage" class="section-block wizard-stage send-accordion-stage" data-stage="timing" @unless($wizardExpandedInitially) hidden @endunless>
                     <div class="section-heading">
                         <div class="title-with-help">
                             <h3>{{ __('ui.send.section_two') }}</h3>
@@ -262,9 +271,13 @@
                             {{ __('ui.send.storage_no_expiry_notice') }}
                         </div>
                     @endif
+
+                    <div class="send-stage-actions">
+                        <button class="button send-stage-next" type="button" data-open-stage="security">{{ __('ui.send.optional_security') }}</button>
+                    </div>
                 </div>
 
-                <div id="security-stage" class="section-block wizard-stage" @unless($wizardExpandedInitially) hidden @endunless @if($selectedDestination === 'storage') style="display:none;" @endif>
+                <div id="security-stage" class="section-block wizard-stage send-accordion-stage" data-stage="security" @unless($wizardExpandedInitially) hidden @endunless @if($selectedDestination === 'storage') style="display:none;" @endif>
                     <div class="section-heading">
                         <div class="title-with-help">
                             <h3>{{ __('ui.send.section_three') }}</h3>
@@ -317,6 +330,7 @@
             </form>
         </section>
     </section>
+    </div>
 
     <script>
         (() => {
@@ -342,6 +356,7 @@
             const publicLinkEnabledInput = document.getElementById('public_link_enabled');
             const publicLinkFields = document.getElementById('public-link-fields');
             const sendSubmit = document.getElementById('send-submit');
+            const submitStage = document.getElementById('submit-stage');
             const wizardStages = Array.from(document.querySelectorAll('.wizard-stage'));
             const receiverInput = document.getElementById('receiver');
             const receiverResult = document.getElementById('receiver-result');
@@ -367,13 +382,22 @@
             const storageExpiryNote = document.getElementById('storage-expiry-note');
             const securityStage = document.getElementById('security-stage');
             const messageInput = document.getElementById('message');
+            const sendStages = {
+                receiver: document.getElementById('receiver-stage'),
+                file: document.getElementById('file-stage'),
+                timing: document.getElementById('timing-stage'),
+                security: document.getElementById('security-stage'),
+            };
+            const stageToggleButtons = Array.from(sendForm.querySelectorAll('[data-stage-toggle]'));
+            const stageNextButtons = Array.from(sendForm.querySelectorAll('[data-open-stage]'));
+            const stageHeadings = Array.from(sendForm.querySelectorAll('.send-accordion-stage > .section-heading'));
 
             const routes = {
-                chunkStart: @json(route('uploads.chunk.start')),
-                chunkStatus: @json(route('uploads.chunk.status')),
-                chunkPart: @json(route('uploads.chunk.part')),
-                chunkFinish: @json(route('uploads.chunk.finish')),
-                usersLookup: @json(route('users.lookup')),
+                chunkStart: @json(route('uploads.chunk.start', [], false)),
+                chunkStatus: @json(route('uploads.chunk.status', [], false)),
+                chunkPart: @json(route('uploads.chunk.part', [], false)),
+                chunkFinish: @json(route('uploads.chunk.finish', [], false)),
+                usersLookup: @json(route('users.lookup', [], false)),
             };
 
             const receiverLocked = @json($receiverLocked);
@@ -408,6 +432,7 @@
                 summaryNoteOnly: @json(__('ui.send.summary_note_only')),
                 receiverSearchNone: @json(__('ui.send.receiver_search_none')),
                 receiverSearchError: @json(__('ui.send.receiver_search_error')),
+                receiverAlreadySelected: @json(__('ui.send.receiver_already_selected')),
                 receiverStorageEnabled: @json(__('ui.send.receiver_storage_enabled')),
                 receiverStorageNoteOnly: @json(__('ui.send.receiver_storage_note_only')),
                 receiverStorageNearCapacity: @json(__('ui.send.receiver_storage_near_capacity')),
@@ -417,6 +442,7 @@
                 chunkReady: @json(__('ui.send.chunk_ready')),
                 uploadReady: @json(__('ui.send.upload_ready')),
                 requestFailed: @json(__('ui.send.request_failed')),
+                networkFailed: @json(__('ui.send.network_failed')),
                 unknownType: @json(__('ui.send.unknown_type')),
                 prepareUpload: @json(__('ui.send.prepare_upload')),
                 uploadComplete: @json(__('ui.send.upload_complete')),
@@ -432,6 +458,12 @@
             let lookupAbortController = null;
             let programmaticSubmit = false;
             let currentReceiverCapabilities = receiverLocked ? prefilledReceiverCapabilities : null;
+            let confirmedReceiverValue = receiverLocked ? (hiddenReceiverInput?.value.trim() || '') : '';
+            let manuallyOpenedSecurity = Boolean(@json($errors->any() || old('download_password') || old('public_link_enabled') || old('public_link_expires_at') || old('public_link_max_downloads')));
+            const openedStages = {
+                file: Boolean(@json($wizardExpandedInitially && $receiverLocked)),
+                timing: Boolean(@json($errors->any() || old('message') || old('custom_expires_at') || old('uploaded_file_token'))),
+            };
 
             const interpolate = (template, replacements) => {
                 return Object.entries(replacements).reduce((value, [key, replacement]) => {
@@ -522,6 +554,29 @@
             };
 
             const normalizeLookupValue = (value) => String(value || '').trim().toLowerCase();
+            const selectedReceiverTokens = () => {
+                const value = receiverInput?.value || '';
+                const separatorIndex = Math.max(value.lastIndexOf(','), value.lastIndexOf(';'));
+
+                if (separatorIndex === -1) {
+                    return new Set();
+                }
+
+                return new Set(
+                    value
+                        .slice(0, separatorIndex)
+                        .split(/[\s,;]+/u)
+                        .map((token) => normalizeLookupValue(token))
+                        .filter(Boolean)
+                );
+            };
+
+            const isReceiverAlreadySelected = (user, selectedTokens) => {
+                return [user.username, user.email, user.mobile]
+                    .map((value) => normalizeLookupValue(value))
+                    .filter(Boolean)
+                    .some((value) => selectedTokens.has(value));
+            };
 
             const findExactReceiverMatch = (users, query) => {
                 if (!Array.isArray(users) || users.length === 0) {
@@ -691,7 +746,7 @@
                 }
 
                 if (fileStage) {
-                    fileStage.hidden = !destinationIsStorage && !showSendMode && !receiverLocked && !getReceiverValue();
+                    fileStage.hidden = !isCompactSendUi() && !destinationIsStorage && !showSendMode && !receiverLocked && !getReceiverValue();
                 }
 
                 if (fileUploadBlock) {
@@ -758,9 +813,100 @@
                 toggleSendModeState();
             };
 
+            const isCompactSendUi = () => window.matchMedia('(max-width: 640px)').matches;
+
+            const setStageExpanded = (stageName, expanded) => {
+                const stage = sendStages[stageName];
+
+                if (!stage) {
+                    return;
+                }
+
+                stage.classList.toggle('send-accordion-collapsed', !expanded);
+
+                const toggle = stageToggleButtons.find((button) => button.dataset.stageToggle === stageName);
+                if (toggle) {
+                    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+                }
+            };
+
+            const openStage = (stageName, shouldScroll = false) => {
+                const stage = sendStages[stageName];
+
+                if (!stage) {
+                    return;
+                }
+
+                stage.hidden = false;
+                if (stageName === 'file' || stageName === 'timing') {
+                    openedStages[stageName] = true;
+                }
+                setStageExpanded(stageName, true);
+
+                if (stageName === 'security') {
+                    manuallyOpenedSecurity = true;
+                }
+
+                if (shouldScroll) {
+                    window.setTimeout(() => {
+                        stage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 40);
+                }
+            };
+
+            const receiverStepComplete = () => {
+                return getDestinationValue() === 'storage'
+                    || receiverLocked
+                    || Boolean(confirmedReceiverValue);
+            };
+
+            const fileStepComplete = () => {
+                return getDestinationValue() === 'storage'
+                    || getSendModeValue() === 'note'
+                    || Boolean(uploadedFileTokenInput.value)
+                    || Boolean(fileInput?.files?.[0]);
+            };
+
+            const syncSendAccordion = () => {
+                const compact = isCompactSendUi();
+                const receiverComplete = receiverStepComplete();
+                const fileComplete = fileStepComplete();
+                const fileVisible = receiverComplete && (openedStages.file || fileComplete);
+                const timingVisible = fileComplete && (openedStages.timing || fileComplete);
+
+                if (sendStages.file) {
+                    sendStages.file.hidden = !fileVisible;
+                }
+
+                if (sendStages.timing) {
+                    sendStages.timing.hidden = !timingVisible;
+                }
+
+                if (sendStages.security && getDestinationValue() !== 'storage') {
+                    sendStages.security.hidden = !manuallyOpenedSecurity;
+                }
+
+                setStageExpanded('receiver', compact ? !receiverComplete : true);
+                setStageExpanded('file', fileVisible && !fileComplete);
+                setStageExpanded('timing', timingVisible);
+                setStageExpanded('security', compact ? manuallyOpenedSecurity : manuallyOpenedSecurity || Boolean(shouldRevealInitially));
+            };
+
+            const syncStageActionButtons = () => {
+                stageNextButtons.forEach((button) => {
+                    const target = button.dataset.openStage;
+                    const disabled = (target === 'file' && !receiverStepComplete())
+                        || (target === 'timing' && !fileStepComplete());
+
+                    button.disabled = disabled;
+                });
+            };
+
             const setWizardExpanded = (expanded) => {
                 wizardStages.forEach((stage) => {
-                    stage.hidden = !expanded;
+                    if (!expanded && !isCompactSendUi()) {
+                        stage.hidden = true;
+                    }
                 });
             };
 
@@ -768,7 +914,8 @@
                 const receiverValue = receiverLocked
                     ? (hiddenReceiverInput?.value.trim() || '')
                     : (receiverInput?.value.trim() || '');
-                const shouldExpand = shouldRevealInitially
+                const shouldExpand = isCompactSendUi()
+                    || shouldRevealInitially
                     || Boolean(uploadedFileTokenInput.value)
                     || Boolean(fileInput?.files?.[0])
                     || Boolean(receiverValue)
@@ -777,7 +924,15 @@
 
                 setWizardExpanded(shouldExpand);
                 toggleSendModeState();
+                syncSendAccordion();
+                syncStageActionButtons();
+
+                if (submitStage) {
+                    submitStage.hidden = !(receiverStepComplete() && fileStepComplete());
+                }
             };
+
+            window.addEventListener('resize', syncWizardVisibility);
 
             const updateSummary = () => {
                 const receiverValue = getReceiverValue();
@@ -845,6 +1000,7 @@
                     receiverContact.textContent = '';
                     receiverAvatar.textContent = '?';
                     currentReceiverCapabilities = null;
+                    confirmedReceiverValue = receiverLocked ? (hiddenReceiverInput?.value.trim() || '') : '';
                     toggleSendModeState();
                     return;
                 }
@@ -858,6 +1014,7 @@
                 receiverContact.textContent = contacts;
                 receiverCard.style.display = 'block';
                 currentReceiverCapabilities = normalizedReceiverCapabilities(user.capabilities);
+                confirmedReceiverValue = user.username || getLookupQuery(receiverInput?.value || '');
                 renderReceiverCapabilityNote();
                 rebuildExpireOptions();
                 syncWizardVisibility();
@@ -874,16 +1031,20 @@
                 }
 
                 receiverSuggestions.innerHTML = '';
+                const selectedTokens = selectedReceiverTokens();
 
                 users.forEach((user) => {
+                    const alreadySelected = isReceiverAlreadySelected(user, selectedTokens);
                     const button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'panel conversation-card';
                     button.style.width = '100%';
                     button.style.padding = '12px 14px';
                     button.style.marginBottom = '6px';
-                    button.style.cursor = 'pointer';
+                    button.style.cursor = alreadySelected ? 'not-allowed' : 'pointer';
                     button.style.textAlign = 'start';
+                    button.disabled = alreadySelected;
+                    button.classList.toggle('receiver-suggestion-disabled', alreadySelected);
                     const threadMain = document.createElement('div');
                     threadMain.className = 'thread-main';
 
@@ -908,6 +1069,14 @@
                     metaStack.appendChild(username);
                     metaStack.appendChild(fullName);
                     metaStack.appendChild(contact);
+
+                    if (alreadySelected) {
+                        const selectedHint = document.createElement('span');
+                        selectedHint.className = 'badge';
+                        selectedHint.textContent = translations.receiverAlreadySelected;
+                        metaStack.appendChild(selectedHint);
+                    }
+
                     threadMain.appendChild(avatar);
                     threadMain.appendChild(metaStack);
                     button.appendChild(threadMain);
@@ -933,15 +1102,21 @@
             };
 
             const postFormData = async (url, formData) => {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': csrfToken,
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'Accept': 'application/json',
-                    },
-                    body: formData,
-                });
+                let response;
+
+                try {
+                    response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: formData,
+                    });
+                } catch (error) {
+                    throw new Error(translations.networkFailed);
+                }
 
                 let payload = {};
 
@@ -1115,6 +1290,7 @@
                 fileCard.style.display = 'block';
                 fileDropzone.classList.add('has-file');
                 setChunkStatus(translations.prepareUpload, 0);
+                openedStages.timing = true;
                 updateSummary();
                 syncWizardVisibility();
                 uploadSelectedFile();
@@ -1125,6 +1301,7 @@
                 }
 
                 const query = getLookupQuery(receiverInput.value);
+                confirmedReceiverValue = '';
                 updateSummary();
 
                 if (lookupAbortController) {
@@ -1279,6 +1456,76 @@
             publicLinkEnabledInput?.addEventListener('change', () => {
                 togglePublicLinkFields();
                 updateSummary();
+            });
+
+            stageToggleButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    const stageName = button.dataset.stageToggle;
+                    const stage = sendStages[stageName];
+
+                    if (!stage) {
+                        return;
+                    }
+
+                    const isOpen = !stage.classList.contains('send-accordion-collapsed');
+                    if (isOpen && stageName !== 'receiver') {
+                        if (stageName === 'security') {
+                            manuallyOpenedSecurity = false;
+                        }
+                        setStageExpanded(stageName, false);
+                        return;
+                    }
+
+                    openStage(stageName, false);
+                });
+            });
+
+            stageNextButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    const stageName = button.dataset.openStage;
+
+                    if (button.disabled) {
+                        if (stageName === 'file') {
+                            receiverInput?.focus();
+                        } else if (stageName === 'timing') {
+                            fileInput?.focus();
+                        }
+
+                        return;
+                    }
+
+                    if (stageName === 'security') {
+                        manuallyOpenedSecurity = true;
+                    }
+
+                    if (stageName === 'file' || stageName === 'timing') {
+                        openedStages[stageName] = true;
+                    }
+
+                    openStage(stageName, true);
+                });
+            });
+
+            stageHeadings.forEach((heading) => {
+                heading.addEventListener('click', (event) => {
+                    if (event.target.closest('button, a, input, select, textarea, label')) {
+                        return;
+                    }
+
+                    const stage = heading.closest('.send-accordion-stage');
+                    const stageName = stage?.dataset.stage;
+
+                    if (!stageName || !stage) {
+                        return;
+                    }
+
+                    const isOpen = !stage.classList.contains('send-accordion-collapsed');
+                    setStageExpanded(stageName, !isOpen);
+
+                    if (stageName === 'security') {
+                        manuallyOpenedSecurity = !isOpen;
+                    }
+                });
             });
 
             sendForm.addEventListener('submit', async (event) => {

@@ -196,6 +196,80 @@ class AdminSubscriptionPlansTest extends TestCase
             ->assertSessionHasErrors('file');
     }
 
+    public function test_single_premium_receiver_can_raise_effective_upload_limit_for_that_send(): void
+    {
+        $sender = User::factory()->create([
+            'username' => 'sender-small-limit',
+            'email' => 'sender-small-limit@example.com',
+        ]);
+
+        $receiver = User::factory()->create([
+            'username' => 'receiver-large-limit',
+            'email' => 'receiver-large-limit@example.com',
+        ]);
+
+        $senderPlan = SubscriptionPlan::query()->create([
+            'name' => 'Small Sender',
+            'slug' => 'small-sender',
+            'description' => 'Sender with small upload limit',
+            'is_active' => true,
+            'is_default' => false,
+            'sort_order' => 51,
+            'max_upload_size_mb' => 1,
+            'max_storage_mb' => null,
+            'expire_options' => ['default', '24'],
+            'allow_public_links' => false,
+            'allow_password_protection' => false,
+            'allow_custom_expiry' => false,
+            'allow_never_expire' => false,
+            'allow_personal_storage' => false,
+            'allow_team_features' => false,
+            'max_team_members' => null,
+            'allow_signature_workflow' => false,
+            'allow_folders' => false,
+            'allow_ai_features' => false,
+        ]);
+
+        $receiverPlan = SubscriptionPlan::query()->create([
+            'name' => 'Large Receiver',
+            'slug' => 'large-receiver',
+            'description' => 'Receiver with higher incoming upload limit',
+            'is_active' => true,
+            'is_default' => false,
+            'sort_order' => 52,
+            'max_upload_size_mb' => 5,
+            'max_storage_mb' => null,
+            'expire_options' => ['default', '24'],
+            'allow_public_links' => true,
+            'allow_password_protection' => true,
+            'allow_custom_expiry' => false,
+            'allow_never_expire' => false,
+            'allow_personal_storage' => false,
+            'allow_team_features' => false,
+            'max_team_members' => null,
+            'allow_signature_workflow' => false,
+            'allow_folders' => false,
+            'allow_ai_features' => false,
+        ]);
+
+        PlanPolicy::assignPlan($sender, $senderPlan);
+        PlanPolicy::assignPlan($receiver, $receiverPlan);
+
+        $this->actingAs($sender)
+            ->post(route('files.store'), [
+                'receiver' => $receiver->username,
+                'message' => 'Receiver plan allows this larger file',
+                'file' => UploadedFile::fake()->create('receiver-large.pdf', 2048, 'application/pdf'),
+                'expire_option' => 'default',
+            ])
+            ->assertRedirect(route('conversations.show', $receiver));
+
+        $this->assertDatabaseHas('files', [
+            'owner_id' => $sender->id,
+            'original_name' => 'receiver-large.pdf',
+        ]);
+    }
+
     public function test_multi_recipient_send_requires_sender_personal_storage_plan(): void
     {
         $sender = User::factory()->create([
@@ -396,6 +470,68 @@ class AdminSubscriptionPlansTest extends TestCase
             ->assertSessionHasErrors('expire_option');
     }
 
+    public function test_full_receiver_storage_auto_disables_no_expiry_receiving_on_lookup(): void
+    {
+        $sender = User::factory()->create([
+            'username' => 'lookup-full-sender',
+            'email' => 'lookup-full-sender@example.com',
+        ]);
+
+        $receiver = User::factory()->create([
+            'username' => 'lookup-full-receiver',
+            'email' => 'lookup-full-receiver@example.com',
+            'allow_receive_no_expiry' => true,
+        ]);
+
+        $receiverPlan = SubscriptionPlan::query()->create([
+            'name' => 'Lookup Full Receiver Storage',
+            'slug' => 'lookup-full-receiver-storage',
+            'description' => 'Receiver storage that is already full',
+            'is_active' => true,
+            'is_default' => false,
+            'sort_order' => 15,
+            'max_upload_size_mb' => 20,
+            'max_storage_mb' => 1,
+            'expire_options' => ['default', '24', 'never'],
+            'allow_public_links' => true,
+            'allow_password_protection' => true,
+            'allow_custom_expiry' => false,
+            'allow_never_expire' => true,
+            'allow_personal_storage' => true,
+            'allow_team_features' => false,
+            'allow_signature_workflow' => false,
+            'allow_folders' => false,
+            'allow_ai_features' => false,
+        ]);
+
+        PlanPolicy::assignPlan($receiver, $receiverPlan);
+
+        SharedFile::query()->create([
+            'owner_id' => $receiver->id,
+            'is_personal_storage' => true,
+            'original_name' => 'full.bin',
+            'stored_name' => 'full.bin',
+            'mime_type' => 'application/octet-stream',
+            'extension' => 'bin',
+            'size' => 1024 * 1024,
+            'storage_path' => 'files/2026/05/full.bin',
+            'checksum' => hash('sha256', 'full'),
+            'expires_at' => null,
+            'status' => SharedFile::STATUS_ACTIVE,
+            'security_scan_status' => SharedFile::SECURITY_SCAN_CLEAN,
+        ]);
+
+        $this->actingAs($sender)
+            ->getJson(route('users.lookup', ['q' => $receiver->username]))
+            ->assertOk()
+            ->assertJsonPath('users.0.username', $receiver->username)
+            ->assertJsonPath('users.0.capabilities.allow_never_expire', false)
+            ->assertJsonPath('users.0.capabilities.receiver_prefers_no_expiry', false)
+            ->assertJsonPath('users.0.capabilities.storage_full', true);
+
+        $this->assertFalse($receiver->fresh()->allow_receive_no_expiry);
+    }
+
     public function test_never_expire_single_send_falls_back_to_sender_storage_when_receiver_has_not_enabled_it(): void
     {
         $sender = User::factory()->create([
@@ -514,7 +650,7 @@ class AdminSubscriptionPlansTest extends TestCase
             ->assertJsonPath('users.0.capabilities.receiver_prefers_no_expiry', true);
     }
 
-    public function test_user_can_view_upgrade_page_and_start_paid_purchase(): void
+    public function test_user_can_view_upgrade_page_but_paid_purchase_is_disabled_for_launch(): void
     {
         $user = User::factory()->create([
             'username' => 'subscriber',
@@ -550,7 +686,7 @@ class AdminSubscriptionPlansTest extends TestCase
             ->assertOk()
             ->assertSee($plan->name)
             ->assertSee(__('ui.subscriptions.available_plans'))
-            ->assertSee(__('ui.subscriptions.choose_plan'));
+            ->assertSee(__('ui.subscriptions.coming_soon'));
 
         Setting::setValue('zibal_enabled', 'true');
         Setting::setValue('zibal_test_mode', 'true');
@@ -565,14 +701,12 @@ class AdminSubscriptionPlansTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('subscriptions.purchase', $plan))
-            ->assertRedirect('https://gateway.zibal.ir/start/TRACK-123');
+            ->assertSessionHasErrors('payment');
 
-        $order = SubscriptionOrder::query()->where('user_id', $user->id)->firstOrFail();
-        $payment = SubscriptionPayment::query()->where('order_id', $order->id)->firstOrFail();
-
-        $this->assertSame(SubscriptionOrder::STATUS_REDIRECTED, $order->status);
-        $this->assertSame(SubscriptionPayment::STATUS_REDIRECTED, $payment->status);
-        $this->assertSame('TRACK-123', $payment->track_id);
+        $this->assertDatabaseMissing('subscription_orders', [
+            'user_id' => $user->id,
+            'plan_id' => $plan->id,
+        ]);
     }
 
     public function test_plan_policy_resolves_subscription_end_date_from_duration(): void

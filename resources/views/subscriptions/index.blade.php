@@ -14,13 +14,9 @@
     </section>
 
     <section class="panel" style="margin-top: 18px; margin-bottom: 18px;">
-        @if($gatewayReady)
-            <div class="status">{{ __('ui.subscriptions.gateway_ready') }}</div>
-        @else
-            <div class="status" style="background: rgba(180, 83, 9, 0.08); color: #9a3412; border-color: rgba(180, 83, 9, 0.16);">
-                {{ __('ui.subscriptions.gateway_not_ready') }}
-            </div>
-        @endif
+        <div class="status" style="background: rgba(180, 83, 9, 0.08); color: #9a3412; border-color: rgba(180, 83, 9, 0.16);">
+            {{ __('ui.subscriptions.paid_disabled_launch') }}
+        </div>
     </section>
 
     <section class="panel" style="margin-top: 18px; margin-bottom: 18px;">
@@ -113,9 +109,11 @@
 
                 <form method="post" action="{{ route('subscriptions.purchase', $plan) }}" style="margin-top: 16px;">
                     @csrf
-                    <button class="button primary" type="submit" @disabled(($planProfile['plan']?->id ?? null) === $plan->id)>{{ __('ui.subscriptions.choose_plan') }}</button>
+                    <button class="button primary" type="submit" @disabled(($planProfile['plan']?->id ?? null) === $plan->id || ($plan->isPaid() && ! $paidPurchasesAvailable))>
+                        {{ $plan->isPaid() && ! $paidPurchasesAvailable ? __('ui.subscriptions.coming_soon') : __('ui.subscriptions.choose_plan') }}
+                    </button>
                     <div class="muted" style="margin-top: 8px;">
-                        {{ $gatewayReady || ! $plan->isPaid() ? __('ui.subscriptions.purchase_live') : __('ui.subscriptions.purchase_pending') }}
+                        {{ $plan->isPaid() && ! $paidPurchasesAvailable ? __('ui.subscriptions.purchase_disabled_launch') : __('ui.subscriptions.purchase_live') }}
                     </div>
                 </form>
             </article>

@@ -34,7 +34,10 @@
             'type' => $filters['type'] ?? 'all',
             'contact' => $filters['contact'] ?? '',
             'scope' => $filters['scope'] ?? 'all',
+            'starred' => $filters['starred'] ?? 'all',
             'period' => $filters['period'] ?? 'all',
+            'sort' => $filters['sort'] ?? 'newest',
+            'per_page' => $filters['per_page'] ?? 24,
             'view' => $viewMode,
             'thumb' => $thumbnailSize,
         ];
@@ -42,7 +45,9 @@
             ? __('ui.file_types.all')
             : collect($selectedTypes)->map(fn ($type) => $type === 'note' ? __('ui.storage.note_badge') : __('ui.file_types.'.$type))->implode('، ');
         $scopeSummary = __('ui.storage.scope_'.($filters['scope'] ?? 'all'));
+        $starredSummary = ($filters['starred'] ?? 'all') === 'yes' ? __('ui.storage.starred_only') : __('ui.common.all');
         $periodSummary = __('ui.storage.period_'.($filters['period'] ?? 'all'));
+        $sortSummary = __('ui.storage.sort_'.($filters['sort'] ?? 'newest'));
         $contactSummary = $contactValue !== '' ? $contactLabelValue : __('ui.common.all');
         $folderSummary = match ((string) ($filters['folder'] ?? 'all')) {
             'root' => __('ui.storage.folder_root'),
@@ -94,7 +99,7 @@
         </article>
     </section>
 
-    <section class="panel" style="margin-top: 18px;">
+    <section class="panel storage-files-panel" style="margin-top: 18px;">
         <div class="section-heading">
             <div class="title-with-help">
                 <h2 style="margin-bottom: 0;">{{ __('ui.storage.files_heading') }}</h2>
@@ -111,67 +116,10 @@
             <div class="status" style="margin-top: 18px; margin-bottom: 0;">{{ __('ui.storage.near_capacity') }}</div>
         @endif
 
-        <div class="storage-workbar">
-            <div class="storage-workbar-main">
-                <div class="storage-control-group storage-display-controls" aria-label="{{ __('ui.storage.view_mode') }}">
-                    <a class="storage-icon-choice @if($viewMode === 'list') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'view' => 'list']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.view_list') }}" aria-label="{{ __('ui.storage.view_list') }}">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
-                    </a>
-                    <a class="storage-icon-choice @if($viewMode === 'grid') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'view' => 'grid']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.view_grid') }}" aria-label="{{ __('ui.storage.view_grid') }}">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
-                    </a>
-                </div>
-                <div class="storage-control-group storage-display-controls" aria-label="{{ __('ui.storage.thumbnail_size') }}">
-                    <a class="storage-icon-choice thumb-sm @if($thumbnailSize === 'sm') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'thumb' => 'sm']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.thumb_sm') }}" aria-label="{{ __('ui.storage.thumb_sm') }}"><span aria-hidden="true"></span></a>
-                    <a class="storage-icon-choice thumb-md @if($thumbnailSize === 'md') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'thumb' => 'md']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.thumb_md') }}" aria-label="{{ __('ui.storage.thumb_md') }}"><span aria-hidden="true"></span></a>
-                    <a class="storage-icon-choice thumb-lg @if($thumbnailSize === 'lg') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'thumb' => 'lg']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.thumb_lg') }}" aria-label="{{ __('ui.storage.thumb_lg') }}"><span aria-hidden="true"></span></a>
-                    <a class="storage-icon-choice thumb-xl @if($thumbnailSize === 'xl') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'thumb' => 'xl']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.thumb_xl') }}" aria-label="{{ __('ui.storage.thumb_xl') }}"><span aria-hidden="true"></span></a>
-                </div>
-            </div>
-            @if($folderFeaturesEnabled)
-                <details class="storage-folder-create">
-                    <summary class="button">{{ __('ui.storage.folder_create_action') }}</summary>
-                    <form method="post" action="{{ route('storage.folders.store') }}" class="storage-folder-popover">
-                        @csrf
-                        <div class="field">
-                            <label for="storage-folder-name">{{ __('ui.storage.folder_name') }}</label>
-                            <input id="storage-folder-name" name="name" value="{{ old('name') }}" placeholder="{{ __('ui.storage.folder_name_placeholder') }}">
-                        </div>
-                        <div class="field">
-                            <label for="storage-folder-parent">{{ __('ui.storage.folder_parent') }}</label>
-                            <select id="storage-folder-parent" name="parent_id">
-                                <option value="">{{ __('ui.storage.folder_root') }}</option>
-                                @foreach($folderOptions as $folderId => $folderLabel)
-                                    <option value="{{ $folderId }}" @selected((string) old('parent_id') === (string) $folderId)>{{ $folderLabel }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <button class="button primary" type="submit">{{ __('ui.storage.folder_create_action') }}</button>
-                    </form>
-                </details>
-            @endif
-        </div>
-
         @if(($filters['contact'] ?? '') !== '')
             <div class="status" style="margin-top: 18px;">
                 {{ $contactActiveLabel }}
                 <a class="button" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['contact' => '', 'folder' => $filters['folder'] ?? 'all']), fn ($value) => $value !== '' && $value !== null)) }}">{{ $clearContactLabel }}</a>
-            </div>
-        @endif
-
-        @if($folderFeaturesEnabled)
-            <div class="panel" style="margin-top: 18px; padding: 16px;">
-                <div class="section-heading" style="margin-bottom: 10px;">
-                    <div>
-                        <strong>{{ $folderTreeTitle }}</strong>
-                        <div class="muted">{{ $folderTreeBody }}</div>
-                    </div>
-                </div>
-                <div class="actions" style="justify-content: space-between; gap: 12px;">
-                    <a class="button @if(($filters['folder'] ?? 'all') === 'all') primary @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => 'all']), fn ($value) => $value !== '' && $value !== null)) }}">{{ __('ui.storage.folder_filter_all') }}</a>
-                    <a class="button @if(($filters['folder'] ?? 'all') === 'root') primary @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => 'root']), fn ($value) => $value !== '' && $value !== null)) }}">{{ __('ui.storage.folder_root') }}</a>
-                </div>
-                @include('storage.partials.folder-tree', ['nodes' => $folderTree ?? [], 'queryBase' => $queryBase])
             </div>
         @endif
 
@@ -215,7 +163,9 @@
                 <span class="storage-filter-chips">
                     <span class="badge">{{ __('ui.storage.type_label') }}: {{ $typeSummary }}</span>
                     <span class="badge">{{ __('ui.storage.scope_label') }}: {{ $scopeSummary }}</span>
+                    <span class="badge">{{ __('ui.storage.starred_label') }}: {{ $starredSummary }}</span>
                     <span class="badge">{{ __('ui.storage.period_label') }}: {{ $periodSummary }}</span>
+                    <span class="badge">{{ __('ui.storage.sort_label') }}: {{ $sortSummary }}</span>
                     <span class="badge">{{ __('ui.storage.contact_label') }}: {{ $contactSummary }}</span>
                     @if($folderFeaturesEnabled)
                         <span class="badge">{{ __('ui.storage.folder_filter_label') }}: {{ $folderSummary }}</span>
@@ -290,6 +240,18 @@
                     </button>
                 </div>
             </div>
+            <div class="field">
+                <label id="storage-starred-label">{{ __('ui.storage.starred_label') }}</label>
+                <input id="storage-starred" type="hidden" name="starred" value="{{ $filters['starred'] ?? 'all' }}">
+                <div class="storage-icon-strip" role="group" aria-labelledby="storage-starred-label">
+                    <button class="storage-icon-choice @if(($filters['starred'] ?? 'all') === 'all') active @endif" type="button" data-storage-choice="starred" data-value="all" title="{{ __('ui.common.all') }}" aria-label="{{ __('ui.common.all') }}">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
+                    </button>
+                    <button class="storage-icon-choice @if(($filters['starred'] ?? 'all') === 'yes') active @endif" type="button" data-storage-choice="starred" data-value="yes" title="{{ __('ui.storage.starred_only') }}" aria-label="{{ __('ui.storage.starred_only') }}">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"/></svg>
+                    </button>
+                </div>
+            </div>
             @if($folderFeaturesEnabled)
                 <div class="field">
                     <label for="storage-folder">{{ __('ui.storage.folder_filter_label') }}</label>
@@ -315,6 +277,25 @@
             </div>
             <input type="hidden" name="view" value="{{ $viewMode }}">
             <input type="hidden" name="thumb" value="{{ $thumbnailSize }}">
+            <div class="field">
+                <label for="storage-sort">{{ __('ui.storage.sort_label') }}</label>
+                <select id="storage-sort" name="sort">
+                    <option value="newest" @selected(($filters['sort'] ?? 'newest') === 'newest')>{{ __('ui.storage.sort_newest') }}</option>
+                    <option value="oldest" @selected(($filters['sort'] ?? 'newest') === 'oldest')>{{ __('ui.storage.sort_oldest') }}</option>
+                    <option value="name_asc" @selected(($filters['sort'] ?? 'newest') === 'name_asc')>{{ __('ui.storage.sort_name_asc') }}</option>
+                    <option value="name_desc" @selected(($filters['sort'] ?? 'newest') === 'name_desc')>{{ __('ui.storage.sort_name_desc') }}</option>
+                    <option value="size_asc" @selected(($filters['sort'] ?? 'newest') === 'size_asc')>{{ __('ui.storage.sort_size_asc') }}</option>
+                    <option value="size_desc" @selected(($filters['sort'] ?? 'newest') === 'size_desc')>{{ __('ui.storage.sort_size_desc') }}</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="storage-per-page">{{ __('ui.storage.per_page_label') }}</label>
+                <select id="storage-per-page" name="per_page">
+                    <option value="12" @selected((int) ($filters['per_page'] ?? 24) === 12)>12</option>
+                    <option value="24" @selected((int) ($filters['per_page'] ?? 24) === 24)>24</option>
+                    <option value="48" @selected((int) ($filters['per_page'] ?? 24) === 48)>48</option>
+                </select>
+            </div>
             <div class="actions" style="grid-column: 1 / -1; justify-content: space-between; align-items: center;">
                 <div class="actions">
                     <button class="button primary" type="submit">{{ __('ui.common.apply_filters') }}</button>
@@ -324,16 +305,119 @@
         </form>
         </details>
 
-        @if($files->isNotEmpty())
-            <div class="muted" style="margin-top: 16px;">{{ __('ui.storage.results_count', ['count' => number_format($files->count())]) }}</div>
+        @if($folderFeaturesEnabled)
+            <div class="panel storage-folder-structure" style="margin-top: 18px; padding: 16px;">
+                <div class="section-heading" style="margin-bottom: 10px;">
+                    <div>
+                        <strong>{{ $folderTreeTitle }}</strong>
+                        <div class="muted">{{ $folderTreeBody }}</div>
+                    </div>
+                </div>
+                <div class="actions" style="justify-content: space-between; gap: 12px;">
+                    <a class="button @if(($filters['folder'] ?? 'all') === 'all') primary @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => 'all']), fn ($value) => $value !== '' && $value !== null)) }}">{{ __('ui.storage.folder_filter_all') }}</a>
+                    <a class="button @if(($filters['folder'] ?? 'all') === 'root') primary @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => 'root']), fn ($value) => $value !== '' && $value !== null)) }}">{{ __('ui.storage.folder_root') }}</a>
+                </div>
+                @include('storage.partials.folder-tree', ['nodes' => $folderTree ?? [], 'queryBase' => $queryBase])
+            </div>
+        @endif
+
+        <div class="storage-workbar">
+            <div class="storage-workbar-main">
+                <div class="storage-control-group storage-display-controls" aria-label="{{ __('ui.storage.view_mode') }}">
+                    <a class="storage-icon-choice @if($viewMode === 'list') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'view' => 'list']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.view_list') }}" aria-label="{{ __('ui.storage.view_list') }}">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
+                    </a>
+                    <a class="storage-icon-choice @if($viewMode === 'grid') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'view' => 'grid']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.view_grid') }}" aria-label="{{ __('ui.storage.view_grid') }}">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
+                    </a>
+                </div>
+                <div class="storage-control-group storage-display-controls" aria-label="{{ __('ui.storage.thumbnail_size') }}">
+                    <a class="storage-icon-choice thumb-sm @if($thumbnailSize === 'sm') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'thumb' => 'sm']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.thumb_sm') }}" aria-label="{{ __('ui.storage.thumb_sm') }}"><span aria-hidden="true"></span></a>
+                    <a class="storage-icon-choice thumb-md @if($thumbnailSize === 'md') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'thumb' => 'md']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.thumb_md') }}" aria-label="{{ __('ui.storage.thumb_md') }}"><span aria-hidden="true"></span></a>
+                    <a class="storage-icon-choice thumb-lg @if($thumbnailSize === 'lg') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'thumb' => 'lg']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.thumb_lg') }}" aria-label="{{ __('ui.storage.thumb_lg') }}"><span aria-hidden="true"></span></a>
+                    <a class="storage-icon-choice thumb-xl @if($thumbnailSize === 'xl') active @endif" href="{{ route('storage.index', array_filter(array_merge($queryBase, ['folder' => $filters['folder'] ?? 'all', 'thumb' => 'xl']), fn ($value) => $value !== '' && $value !== null)) }}" title="{{ __('ui.storage.thumb_xl') }}" aria-label="{{ __('ui.storage.thumb_xl') }}"><span aria-hidden="true"></span></a>
+                </div>
+            </div>
+            <div class="storage-bulk-actions">
+                @if($folderFeaturesEnabled)
+                    <details class="storage-folder-create">
+                        <summary class="storage-workbar-action" title="{{ __('ui.storage.folder_create_action') }}" aria-label="{{ __('ui.storage.folder_create_action') }}">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h6l2 2h8v10H4z"/><path d="M12 13h6M15 10v6"/></svg>
+                        </summary>
+                        <form method="post" action="{{ route('storage.folders.store') }}" class="storage-folder-popover">
+                            @csrf
+                            <div class="field">
+                                <label for="storage-folder-name">{{ __('ui.storage.folder_name') }}</label>
+                                <input id="storage-folder-name" name="name" value="{{ old('name') }}" placeholder="{{ __('ui.storage.folder_name_placeholder') }}">
+                            </div>
+                            <div class="field">
+                                <label for="storage-folder-parent">{{ __('ui.storage.folder_parent') }}</label>
+                                <select id="storage-folder-parent" name="parent_id">
+                                    <option value="">{{ __('ui.storage.folder_root') }}</option>
+                                    @foreach($folderOptions as $folderId => $folderLabel)
+                                        <option value="{{ $folderId }}" @selected((string) old('parent_id') === (string) $folderId)>{{ $folderLabel }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <button class="button primary" type="submit">{{ __('ui.storage.folder_create_action') }}</button>
+                        </form>
+                    </details>
+                    <details class="storage-folder-create">
+                        <summary class="storage-workbar-action" title="{{ __('ui.storage.bulk_move_label') }}" aria-label="{{ __('ui.storage.bulk_move_label') }}">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h6l2 2h8v10H4z"/><path d="M7 14h9"/><path d="m13 11 3 3-3 3"/></svg>
+                        </summary>
+                        <form id="storage-bulk-folder-form" method="post" action="{{ route('storage.bulk.folder') }}" class="storage-folder-popover" data-storage-bulk-form>
+                            @csrf
+                            @method('patch')
+                            <div data-storage-bulk-target></div>
+                            <div class="field">
+                                <label for="storage-bulk-folder">{{ __('ui.storage.move_to_folder') }}</label>
+                                <select id="storage-bulk-folder" name="folder_id">
+                                    <option value="">{{ __('ui.storage.folder_root') }}</option>
+                                    @foreach($folderOptions as $folderId => $folderLabel)
+                                        <option value="{{ $folderId }}">{{ $folderLabel }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="storage-bulk-new-folder">{{ __('ui.storage.folder_quick_create_label') }}</label>
+                                <input id="storage-bulk-new-folder" name="new_folder_name" placeholder="{{ __('ui.storage.folder_name_placeholder') }}">
+                            </div>
+                            <button class="button primary" type="submit">{{ __('ui.storage.bulk_move_action') }}</button>
+                        </form>
+                    </details>
+                @endif
+                <details class="storage-folder-create">
+                    <summary class="storage-workbar-action danger" title="{{ __('ui.storage.bulk_delete_label') }}" aria-label="{{ __('ui.storage.bulk_delete_label') }}">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14"/><path d="M9 7V4h6v3"/><path d="M8 10v9M12 10v9M16 10v9"/><path d="M6 7l1 14h10l1-14"/></svg>
+                    </summary>
+                    <form id="storage-bulk-delete-form" method="post" action="{{ route('storage.bulk.destroy') }}" class="storage-folder-popover" data-storage-bulk-form data-storage-confirm="{{ __('ui.storage.bulk_delete_confirm') }}">
+                        @csrf
+                        @method('delete')
+                        <div data-storage-bulk-target></div>
+                        <p class="muted">{{ __('ui.storage.bulk_delete_hint') }}</p>
+                        <button class="button" type="submit">{{ __('ui.storage.bulk_delete_action') }}</button>
+                    </form>
+                </details>
+            </div>
+        </div>
+
+        @if($files->total() > 0)
+            <div class="muted" style="margin-top: 16px;">{{ __('ui.storage.results_count', ['count' => number_format($files->total())]) }}</div>
         @endif
 
         @if($viewMode === 'grid')
-            <div class="grid cols-2" style="margin-top: 18px;">
+            <div class="grid cols-2 storage-file-grid" style="margin-top: 18px;">
                 @forelse($files as $file)
-                    <div class="panel" style="padding: 16px;">
-                        <div class="actions" style="justify-content: space-between; align-items: flex-start;">
+                    <div class="panel storage-file-card" style="padding: 16px;">
+                        <div class="storage-file-card-head">
                             <div style="width: {{ $thumbPixels }}px; max-width: 100%;">
+                                @if($file->getAttribute('can_manage_workspace'))
+                                    <label class="storage-bulk-check">
+                                        <input type="checkbox" value="{{ $file->id }}" data-storage-bulk-file>
+                                        <span>{{ __('ui.storage.bulk_select_label') }}</span>
+                                    </label>
+                                @endif
                                 <div style="width: {{ $thumbPixels }}px; height: {{ $thumbPixels }}px; max-width: 100%; border-radius: 18px; overflow: hidden; background: rgba(15,118,110,0.06); border: 1px solid rgba(15,118,110,0.12); display:flex; align-items:center; justify-content:center; position: relative;">
                                     @if($file->getAttribute('thumbnail_url'))
                                         <img src="{{ $file->getAttribute('thumbnail_url') }}" alt="{{ $file->original_name }}" style="width: 100%; height: 100%; object-fit: cover;">
@@ -345,40 +429,7 @@
                                     @endif
                                 </div>
                             </div>
-                            <details style="position: relative;">
-                                <summary class="button" style="list-style:none;">...</summary>
-                                <div class="panel" style="position:absolute; inset-inline-end:0; margin-top:8px; min-width:180px; z-index:5; padding:12px;">
-                                    <div class="actions" style="flex-direction: column; align-items: stretch;">
-                                        @if($file->getAttribute('can_inline_preview'))
-                                            <a class="button" href="{{ route('storage.preview', $file) }}">{{ __('ui.actions.open_preview') }}</a>
-                                        @endif
-                                        <a class="button" href="{{ route('storage.download', $file) }}">{{ __('ui.actions.download') }}</a>
-                                        @if($folderFeaturesEnabled && $file->getAttribute('can_manage_workspace'))
-                                            <form method="post" action="{{ route('storage.folder.update', $file) }}">
-                                                @csrf
-                                                @method('patch')
-                                                <select name="folder_id" style="width: 100%; margin-bottom: 8px;">
-                                                    <option value="">{{ __('ui.storage.folder_root') }}</option>
-                                                    @foreach($folderOptions as $folderId => $folderLabel)
-                                                        <option value="{{ $folderId }}" @selected((string) $file->getAttribute('workspace_folder_id') === (string) $folderId)>{{ $folderLabel }}</option>
-                                                    @endforeach
-                                                </select>
-                                                <button class="button" type="submit">{{ __('ui.storage.move_to_folder') }}</button>
-                                            </form>
-                                        @endif
-                                        <button class="button" type="button" onclick="document.getElementById('storage-note-{{ $file->id }}')?.classList.toggle('hidden')">{{ __('ui.storage.show_note') }}</button>
-                                        @if($file->getAttribute('can_manage_workspace'))
-                                            <form method="post" action="{{ route('storage.destroy', $file) }}">
-                                                @csrf
-                                                @method('delete')
-                                                <button class="button" type="submit">
-                                                    {{ $file->getAttribute('is_workspace_owner') ? __('ui.common.delete') : __('ui.storage.remove_from_workspace') }}
-                                                </button>
-                                            </form>
-                                        @endif
-                                    </div>
-                                </div>
-                            </details>
+                            @include('storage.partials.file-actions', ['file' => $file, 'folderFeaturesEnabled' => $folderFeaturesEnabled, 'folderOptions' => $folderOptions])
                         </div>
                         <div class="meta-stack" style="min-width: 0; margin-top: 14px;">
                                 <strong>{{ $file->original_name }}</strong>
@@ -396,6 +447,9 @@
                         <div class="message-statuses" style="margin-top: 12px;">
                             <span class="badge">{{ __('ui.storage.scope_badge_'.$file->getAttribute('workspace_context')) }}</span>
                             <span class="badge">{{ __('ui.storage.no_expiry') }}</span>
+                            @if($file->getAttribute('workspace_starred'))
+                                <span class="badge">{{ __('ui.storage.starred_badge') }}</span>
+                            @endif
                             @if($file->getAttribute('is_text_note'))
                                 <span class="badge">{{ __('ui.storage.note_badge') }}</span>
                             @endif
@@ -418,8 +472,14 @@
         @else
         <div class="list" style="margin-top: 18px;">
             @forelse($files as $file)
-                <div class="item" style="align-items: flex-start;">
+                <div class="item storage-file-list-item" style="align-items: flex-start;">
                     <div style="display:flex; gap:14px; min-width: 0; flex:1; align-items:flex-start;">
+                        @if($file->getAttribute('can_manage_workspace'))
+                            <label class="storage-bulk-check">
+                                <input type="checkbox" value="{{ $file->id }}" data-storage-bulk-file>
+                                <span>{{ __('ui.storage.bulk_select_label') }}</span>
+                            </label>
+                        @endif
                         <div style="width:72px; height:72px; border-radius:16px; overflow:hidden; background: rgba(15,118,110,0.06); border:1px solid rgba(15,118,110,0.12); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
                             @if($file->getAttribute('thumbnail_url'))
                                 <img src="{{ $file->getAttribute('thumbnail_url') }}" alt="{{ $file->original_name }}" style="width:100%; height:100%; object-fit:cover;">
@@ -448,6 +508,9 @@
                         <div class="message-statuses">
                             <span class="badge">{{ __('ui.storage.scope_badge_'.$file->getAttribute('workspace_context')) }}</span>
                             <span class="badge">{{ __('ui.storage.no_expiry') }}</span>
+                            @if($file->getAttribute('workspace_starred'))
+                                <span class="badge">{{ __('ui.storage.starred_badge') }}</span>
+                            @endif
                             @if($file->getAttribute('is_text_note'))
                                 <span class="badge">{{ __('ui.storage.note_badge') }}</span>
                             @endif
@@ -462,34 +525,7 @@
                         </div>
                     </div>
                     </div>
-                    <div class="actions" style="justify-content: flex-end;">
-                        @if($file->getAttribute('can_inline_preview'))
-                            <a class="button" href="{{ route('storage.preview', $file) }}">{{ __('ui.actions.open_preview') }}</a>
-                        @endif
-                        <a class="button" href="{{ route('storage.download', $file) }}">{{ __('ui.actions.download') }}</a>
-                        @if($file->getAttribute('can_manage_workspace'))
-                            @if($folderFeaturesEnabled)
-                                <form method="post" action="{{ route('storage.folder.update', $file) }}">
-                                    @csrf
-                                    @method('patch')
-                                    <select name="folder_id">
-                                        <option value="">{{ __('ui.storage.folder_root') }}</option>
-                                        @foreach($folderOptions as $folderId => $folderLabel)
-                                            <option value="{{ $folderId }}" @selected((string) $file->getAttribute('workspace_folder_id') === (string) $folderId)>{{ $folderLabel }}</option>
-                                        @endforeach
-                                    </select>
-                                    <button class="button" type="submit">{{ __('ui.storage.move_to_folder') }}</button>
-                                </form>
-                            @endif
-                            <form method="post" action="{{ route('storage.destroy', $file) }}">
-                                @csrf
-                                @method('delete')
-                                <button class="button" type="submit">
-                                    {{ $file->getAttribute('is_workspace_owner') ? __('ui.common.delete') : __('ui.storage.remove_from_workspace') }}
-                                </button>
-                            </form>
-                        @endif
-                    </div>
+                    @include('storage.partials.file-actions', ['file' => $file, 'folderFeaturesEnabled' => $folderFeaturesEnabled, 'folderOptions' => $folderOptions])
                 </div>
             @empty
                 <div class="empty-state">
@@ -499,6 +535,11 @@
                 </div>
             @endforelse
         </div>
+        @endif
+        @if($files->hasPages())
+            <div style="margin-top: 18px;">
+                {{ $files->links() }}
+            </div>
         @endif
     </section>
 
@@ -517,6 +558,9 @@
             const contactSuggestions = document.getElementById('storage-contact-suggestions');
             const contactResult = document.getElementById('storage-contact-result');
             const clearContactButtons = document.querySelectorAll('[data-clear-contact-filter]');
+            const moveOpenButtons = document.querySelectorAll('[data-storage-move-open]');
+            const bulkForms = document.querySelectorAll('[data-storage-bulk-form]');
+            const folderMenus = document.querySelectorAll('.storage-workbar .storage-folder-create');
             const routes = {
                 usersLookup: @json(route('users.lookup')),
             };
@@ -524,6 +568,7 @@
                 searchNone: @json(__('ui.send.receiver_search_none')),
                 searchError: @json(__('ui.send.receiver_search_error')),
                 searchFound: @json(__('ui.send.receiver_search_found')),
+                bulkSelectRequired: @json(__('ui.storage.bulk_select_required')),
             };
             let lookupTimer = null;
             let lookupAbortController = null;
@@ -553,6 +598,84 @@
                 if (displayPanel) {
                     displayPanel.hidden = true;
                 }
+            });
+            const closeFolderMenus = (except = null) => {
+                folderMenus.forEach((menu) => {
+                    if (menu === except) {
+                        return;
+                    }
+
+                    menu.open = false;
+                    menu.classList.remove('is-open');
+                });
+            };
+            folderMenus.forEach((menu) => {
+                const summary = menu.querySelector('summary');
+                const popover = menu.querySelector('.storage-folder-popover');
+
+                summary?.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    const shouldOpen = !menu.open;
+                    closeFolderMenus(menu);
+                    menu.open = shouldOpen;
+                    menu.classList.toggle('is-open', shouldOpen);
+                });
+
+                popover?.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                });
+            });
+            moveOpenButtons.forEach((button) => {
+                button.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    const panel = document.getElementById(button.dataset.storageMoveOpen || '');
+
+                    if (!panel) {
+                        return;
+                    }
+
+                    document.querySelectorAll('.storage-move-popover').forEach((item) => {
+                        if (item !== panel) {
+                            item.hidden = true;
+                        }
+                    });
+
+                    panel.hidden = !panel.hidden;
+                });
+            });
+            bulkForms.forEach((form) => {
+                form.addEventListener('submit', (event) => {
+                    const selectedIds = Array
+                        .from(document.querySelectorAll('[data-storage-bulk-file]:checked'))
+                        .map((input) => input.value)
+                        .filter(Boolean);
+
+                    form.querySelectorAll('[data-generated-bulk-file]').forEach((input) => input.remove());
+
+                    if (selectedIds.length === 0) {
+                        event.preventDefault();
+                        window.alert(translations.bulkSelectRequired);
+                        return;
+                    }
+
+                    if (form.dataset.storageConfirm && !window.confirm(form.dataset.storageConfirm)) {
+                        event.preventDefault();
+                        return;
+                    }
+
+                    const target = form.querySelector('[data-storage-bulk-target]') || form;
+
+                    selectedIds.forEach((fileId) => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'file_ids[]';
+                        input.value = fileId;
+                        input.dataset.generatedBulkFile = 'true';
+                        target.appendChild(input);
+                    });
+                });
             });
             choiceButtons.forEach((button) => {
                 button.addEventListener('click', () => {
@@ -741,9 +864,31 @@
                     if (displayPanel) {
                         displayPanel.hidden = true;
                     }
+                    closeFolderMenus();
+                    document.querySelectorAll('.storage-move-popover').forEach((item) => {
+                        item.hidden = true;
+                    });
                 }
             });
             document.addEventListener('click', (event) => {
+                if (!event.target.closest('.storage-folder-create')) {
+                    closeFolderMenus();
+                }
+
+                document.querySelectorAll('.storage-move-popover').forEach((item) => {
+                    const opener = document.querySelector(`[data-storage-move-open="${item.id}"]`);
+
+                    if (
+                        item.hidden
+                        || item.contains(event.target)
+                        || opener?.contains(event.target)
+                    ) {
+                        return;
+                    }
+
+                    item.hidden = true;
+                });
+
                 if (
                     contactSuggestions
                     && contactSearchInput

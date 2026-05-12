@@ -53,8 +53,8 @@
                         </div>
                         <div class="meta-stack" style="min-width: 220px;">
                             <span class="badge">{{ __('admin.orders.statuses.'.$order->status) }}</span>
-                            <span class="muted">{{ __('admin.orders.created_at') }}: {{ $order->created_at?->format('Y-m-d H:i') }}</span>
-                            <span class="muted">{{ __('admin.orders.paid_at') }}: {{ $order->paid_at?->format('Y-m-d H:i') ?? __('ui.common.not_available') }}</span>
+                            <span class="muted">{{ __('admin.orders.created_at') }}: {{ \App\Support\LocalizedDate::dateTime($order->created_at) }}</span>
+                            <span class="muted">{{ __('admin.orders.paid_at') }}: {{ \App\Support\LocalizedDate::dateTime($order->paid_at) }}</span>
                         </div>
                     </div>
                 </div>

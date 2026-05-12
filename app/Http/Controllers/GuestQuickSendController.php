@@ -95,7 +95,7 @@ class GuestQuickSendController extends Controller
             'security_scan_status' => SharedFile::SECURITY_SCAN_PENDING,
         ]);
 
-        ScanUploadedFileJob::dispatch($sharedFile->id);
+        ScanUploadedFileJob::dispatchSync($sharedFile->id);
 
         $fileSend = FileSend::create([
             'file_id' => $sharedFile->id,
@@ -116,7 +116,9 @@ class GuestQuickSendController extends Controller
             ->with('quick_send_result', [
                 'receiver' => $receiver->username,
                 'file_name' => $sharedFile->original_name,
-                'expires_at' => $expiresAt->format('Y-m-d H:i'),
+                'expires_at' => \App\Support\LocalizedDate::dateTime($expiresAt),
+                'sender_name' => trim((string) $validated['sender_name']),
+                'sender_contact' => trim((string) ($validated['sender_contact'] ?? '')),
             ]);
     }
 

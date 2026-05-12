@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Setting;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\Response;
 
 class PwaController extends Controller
 {
@@ -60,7 +60,7 @@ class PwaController extends Controller
 
     public function serviceWorker(): Response
     {
-        $version = 'freesend-v3';
+        $version = 'freesend-v4';
         $script = <<<JS
 const CACHE_NAME = '{$version}';
 const APP_SHELL = ['/manifest.webmanifest'];
@@ -93,15 +93,6 @@ self.addEventListener('fetch', (event) => {
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
-        .then((response) => {
-          if (!response || !response.ok) {
-            return response;
-          }
-
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)).catch(() => {});
-          return response;
-        })
         .catch(async () => {
           const cached = await caches.match(event.request);
           return cached || caches.match('/dashboard') || caches.match('/');
@@ -132,19 +123,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (!response || !response.ok) {
-          return response;
-        }
-
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)).catch(() => {});
-        return response;
-      })
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/dashboard') || caches.match('/')))
-  );
+  event.respondWith(fetch(event.request));
 });
 JS;
 
@@ -175,6 +154,37 @@ JS;
 
         if (is_file($fallback)) {
             return response(file_get_contents($fallback) ?: '', 200, ['Content-Type' => 'image/x-icon']);
+        }
+
+        return response('', 404);
+    }
+
+    public function landingAsset(string $slot): Response
+    {
+        $settingKey = match ($slot) {
+            'hero' => 'landing_hero_image_path',
+            'feature-1' => 'landing_feature_1_image_path',
+            'feature-2' => 'landing_feature_2_image_path',
+            'feature-3' => 'landing_feature_3_image_path',
+            default => null,
+        };
+
+        abort_if($settingKey === null, 404);
+
+        $path = (string) Setting::getValue($settingKey, '');
+
+        if ($path === '') {
+            return response('', 404);
+        }
+
+        $publicDisk = Storage::disk('public');
+
+        if ($publicDisk->exists($path)) {
+            return $publicDisk->response($path);
+        }
+
+        if (Storage::exists($path)) {
+            return Storage::response($path);
         }
 
         return response('', 404);

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'role',
     'context',
     'folder_id',
+    'is_starred',
 ])]
 class FileStorageAccess extends Model
 {
@@ -24,6 +25,10 @@ class FileStorageAccess extends Model
     public const CONTEXT_RECEIVED = 'received';
 
     protected $table = 'file_storage_access';
+
+    protected $casts = [
+        'is_starred' => 'boolean',
+    ];
 
     public function file(): BelongsTo
     {

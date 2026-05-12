@@ -6,6 +6,7 @@ use App\Models\AppNotification;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
+use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,6 +23,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $shouldForceHttps = app()->environment('production')
+            && filter_var(config('app.force_https', false), FILTER_VALIDATE_BOOL);
+
+        if ($shouldForceHttps) {
+            URL::forceRootUrl(config('app.url'));
+            URL::forceScheme('https');
+        }
         View::composer('layouts.app', function ($view): void {
             $data = [
                 'layoutUnreadNotifications' => 0,

@@ -118,7 +118,7 @@
                                 <span class="icon-badge {{ $directionClass }}">{!! $directionIcon !!}</span>
                                 <strong>{{ $isSender ? __('ui.history.sent_to', ['user' => $otherLabel]) : __('ui.history.received_from', ['user' => $otherLabel]) }}</strong>
                             </div>
-                            <div class="muted">{{ $row->created_at->format('Y-m-d H:i') }} · {{ __('ui.file_types.'.$category) }} · {{ $row->file->readableSize() }}</div>
+                            <div class="muted">{{ \App\Support\LocalizedDate::dateTime($row->created_at) }} · {{ __('ui.file_types.'.$category) }} · {{ $row->file->readableSize() }}</div>
                             <div class="message-statuses">
                                 <span class="badge">{{ $isSender ? __('ui.statuses.sent') : __('ui.statuses.received') }}</span>
                                 <span class="badge">{{ $row->read_at ? __('ui.statuses.read') : __('ui.statuses.unread') }}</span>

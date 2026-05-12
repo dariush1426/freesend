@@ -246,8 +246,136 @@ class PersonalStorageTest extends TestCase
             ->assertSee('note-1.txt')
             ->assertDontSee('image-1.jpg')
             ->assertSee(__('ui.storage.view_grid'))
+            ->assertSee(__('ui.storage.sort_label'))
             ->assertSee('Ali Sender')
             ->assertSee('Reza Recipient');
+    }
+
+    public function test_personal_storage_can_sort_files_by_name_and_size(): void
+    {
+        Storage::fake();
+
+        $owner = User::factory()->create([
+            'username' => 'sort-owner',
+            'email' => 'sort-owner@example.com',
+        ]);
+
+        $plan = SubscriptionPlan::query()->create([
+            'name' => 'Sort Storage',
+            'slug' => 'sort-storage',
+            'description' => 'Storage sort plan',
+            'is_active' => true,
+            'is_default' => false,
+            'sort_order' => 31,
+            'max_upload_size_mb' => 10,
+            'max_storage_mb' => 10,
+            'expire_options' => ['default', '24', 'never'],
+            'allow_public_links' => true,
+            'allow_password_protection' => true,
+            'allow_custom_expiry' => false,
+            'allow_never_expire' => true,
+            'allow_personal_storage' => true,
+            'allow_team_features' => false,
+            'allow_signature_workflow' => false,
+            'allow_folders' => false,
+            'allow_ai_features' => false,
+        ]);
+
+        PlanPolicy::assignPlan($owner, $plan);
+
+        foreach ([
+            ['zeta.pdf', 3000],
+            ['alpha.pdf', 1000],
+            ['middle.pdf', 2000],
+        ] as [$name, $size]) {
+            SharedFile::query()->create([
+                'owner_id' => $owner->id,
+                'is_personal_storage' => true,
+                'original_name' => $name,
+                'stored_name' => $name,
+                'mime_type' => 'application/pdf',
+                'extension' => 'pdf',
+                'size' => $size,
+                'storage_path' => 'files/2026/05/'.$name,
+                'checksum' => hash('sha256', $name),
+                'expires_at' => null,
+                'status' => SharedFile::STATUS_ACTIVE,
+                'security_scan_status' => SharedFile::SECURITY_SCAN_CLEAN,
+            ]);
+        }
+
+        $this->actingAs($owner)
+            ->get(route('storage.index', ['sort' => 'name_asc']))
+            ->assertOk()
+            ->assertSeeInOrder(['alpha.pdf', 'middle.pdf', 'zeta.pdf']);
+
+        $this->actingAs($owner)
+            ->get(route('storage.index', ['sort' => 'size_desc']))
+            ->assertOk()
+            ->assertSeeInOrder(['zeta.pdf', 'middle.pdf', 'alpha.pdf']);
+    }
+
+    public function test_personal_storage_paginates_filtered_results(): void
+    {
+        Storage::fake();
+
+        $owner = User::factory()->create([
+            'username' => 'page-owner',
+            'email' => 'page-owner@example.com',
+        ]);
+
+        $plan = SubscriptionPlan::query()->create([
+            'name' => 'Paged Storage',
+            'slug' => 'paged-storage',
+            'description' => 'Storage pagination plan',
+            'is_active' => true,
+            'is_default' => false,
+            'sort_order' => 32,
+            'max_upload_size_mb' => 10,
+            'max_storage_mb' => 10,
+            'expire_options' => ['default', '24', 'never'],
+            'allow_public_links' => true,
+            'allow_password_protection' => true,
+            'allow_custom_expiry' => false,
+            'allow_never_expire' => true,
+            'allow_personal_storage' => true,
+            'allow_team_features' => false,
+            'allow_signature_workflow' => false,
+            'allow_folders' => false,
+            'allow_ai_features' => false,
+        ]);
+
+        PlanPolicy::assignPlan($owner, $plan);
+
+        foreach (range(1, 13) as $index) {
+            SharedFile::query()->create([
+                'owner_id' => $owner->id,
+                'is_personal_storage' => true,
+                'original_name' => sprintf('paged-%02d.pdf', $index),
+                'stored_name' => sprintf('paged-%02d.pdf', $index),
+                'mime_type' => 'application/pdf',
+                'extension' => 'pdf',
+                'size' => 1000 + $index,
+                'storage_path' => sprintf('files/2026/05/paged-%02d.pdf', $index),
+                'checksum' => hash('sha256', (string) $index),
+                'expires_at' => null,
+                'status' => SharedFile::STATUS_ACTIVE,
+                'security_scan_status' => SharedFile::SECURITY_SCAN_CLEAN,
+            ]);
+        }
+
+        $this->actingAs($owner)
+            ->get(route('storage.index', ['sort' => 'name_asc', 'per_page' => 12]))
+            ->assertOk()
+            ->assertSee('paged-01.pdf')
+            ->assertDontSee('paged-13.pdf')
+            ->assertSee(__('ui.storage.results_count', ['count' => '13']));
+
+        $this->actingAs($owner)
+            ->get(route('storage.index', ['sort' => 'name_asc', 'per_page' => 12, 'page' => 2]))
+            ->assertOk()
+            ->assertSee('paged-13.pdf')
+            ->assertDontSee('paged-01.pdf');
     }
 
     public function test_workspace_access_role_shows_shared_no_expiry_file_for_both_sender_and_receiver(): void
@@ -505,6 +633,62 @@ class PersonalStorageTest extends TestCase
             ->assertSee('Contracts');
 
         $this->actingAs($sender)
+            ->post(route('storage.folders.store'), [
+                'name' => 'Signed',
+                'parent_id' => $folder->id,
+            ])
+            ->assertSessionHas('status', __('messages.personal_storage.folder_created'));
+
+        $childFolder = StorageFolder::query()
+            ->where('owner_id', $sender->id)
+            ->where('parent_id', $folder->id)
+            ->where('name', 'Signed')
+            ->firstOrFail();
+
+        $this->actingAs($sender)
+            ->patch(route('storage.folder.update', $sharedFile), [
+                'folder_id' => $childFolder->id,
+            ])
+            ->assertSessionHas('status', __('messages.personal_storage.moved_to_folder'));
+
+        $this->actingAs($sender)
+            ->get(route('storage.index', ['folder' => (string) $folder->id]))
+            ->assertOk()
+            ->assertSee('foldered.pdf')
+            ->assertSee('Signed');
+
+        $this->actingAs($sender)
+            ->get(route('storage.index', ['folder' => (string) $childFolder->id]))
+            ->assertOk()
+            ->assertSee('foldered.pdf');
+
+        $this->actingAs($sender)
+            ->patch(route('storage.folder.update', $sharedFile), [
+                'new_folder_name' => 'Invoices',
+            ])
+            ->assertSessionHas('status', __('messages.personal_storage.moved_to_folder'));
+
+        $quickFolder = StorageFolder::query()->where('owner_id', $sender->id)->where('name', 'Invoices')->firstOrFail();
+
+        $this->assertDatabaseHas('file_storage_access', [
+            'file_id' => $sharedFile->id,
+            'user_id' => $sender->id,
+            'folder_id' => $quickFolder->id,
+            'context' => FileStorageAccess::CONTEXT_SENT,
+        ]);
+
+        $this->actingAs($sender)
+            ->patch(route('storage.rename', $sharedFile), [
+                'name' => 'renamed-foldered.pdf',
+            ])
+            ->assertSessionHas('status', __('messages.personal_storage.file_renamed'));
+
+        $this->assertDatabaseHas('files', [
+            'id' => $sharedFile->id,
+            'original_name' => 'renamed-foldered.pdf',
+        ]);
+
+        $this->actingAs($sender)
             ->patch(route('storage.folders.update', $folder), [
                 'name' => 'Signed Contracts',
             ])
@@ -534,6 +718,354 @@ class PersonalStorageTest extends TestCase
 
         $this->assertDatabaseMissing('storage_folders', [
             'id' => $emptyFolder->id,
+        ]);
+    }
+
+    public function test_user_can_bulk_move_manageable_workspace_files_to_folder(): void
+    {
+        Storage::fake();
+
+        $sender = User::factory()->create([
+            'username' => 'bulk-sender',
+            'email' => 'bulk-sender@example.com',
+        ]);
+
+        $receiver = User::factory()->create([
+            'username' => 'bulk-receiver',
+            'email' => 'bulk-receiver@example.com',
+            'allow_receive_no_expiry' => true,
+        ]);
+
+        $plan = SubscriptionPlan::query()->create([
+            'name' => 'Bulk Folder Workspace',
+            'slug' => 'bulk-folder-workspace',
+            'description' => 'Folder bulk workspace plan',
+            'is_active' => true,
+            'is_default' => false,
+            'sort_order' => 46,
+            'max_upload_size_mb' => 10,
+            'max_storage_mb' => 10,
+            'expire_options' => ['default', '24', 'never'],
+            'allow_public_links' => true,
+            'allow_password_protection' => true,
+            'allow_custom_expiry' => false,
+            'allow_never_expire' => true,
+            'allow_personal_storage' => true,
+            'allow_team_features' => false,
+            'allow_signature_workflow' => false,
+            'allow_folders' => true,
+            'allow_ai_features' => false,
+        ]);
+
+        PlanPolicy::assignPlan($sender, $plan);
+        PlanPolicy::assignPlan($receiver, $plan);
+
+        $files = collect(['bulk-a.pdf', 'bulk-b.pdf'])
+            ->map(function (string $name) use ($sender, $receiver): SharedFile {
+                $file = SharedFile::query()->create([
+                    'owner_id' => $sender->id,
+                    'is_personal_storage' => true,
+                    'original_name' => $name,
+                    'stored_name' => $name,
+                    'mime_type' => 'application/pdf',
+                    'extension' => 'pdf',
+                    'size' => 1000,
+                    'storage_path' => 'files/2026/05/'.$name,
+                    'checksum' => hash('sha256', $name),
+                    'expires_at' => null,
+                    'status' => SharedFile::STATUS_ACTIVE,
+                    'security_scan_status' => SharedFile::SECURITY_SCAN_CLEAN,
+                ]);
+
+                FileSend::query()->create([
+                    'file_id' => $file->id,
+                    'sender_id' => $sender->id,
+                    'receiver_id' => $receiver->id,
+                    'message' => 'bulk',
+                ]);
+
+                FileStorageAccess::query()->create([
+                    'file_id' => $file->id,
+                    'user_id' => $sender->id,
+                    'role' => FileStorageAccess::ROLE_OWNER,
+                    'context' => FileStorageAccess::CONTEXT_SENT,
+                ]);
+
+                return $file;
+            });
+
+        $folder = StorageFolder::query()->create([
+            'owner_id' => $sender->id,
+            'parent_id' => null,
+            'name' => 'Bulk Docs',
+        ]);
+
+        $this->actingAs($sender)
+            ->patch(route('storage.bulk.folder'), [
+                'file_ids' => $files->pluck('id')->all(),
+                'folder_id' => $folder->id,
+            ])
+            ->assertSessionHas('status', __('messages.personal_storage.bulk_moved_to_folder', ['count' => 2]));
+
+        foreach ($files as $file) {
+            $this->assertDatabaseHas('file_storage_access', [
+                'file_id' => $file->id,
+                'user_id' => $sender->id,
+                'folder_id' => $folder->id,
+            ]);
+        }
+    }
+
+    public function test_user_can_bulk_remove_selected_workspace_files(): void
+    {
+        Storage::fake();
+
+        $user = User::factory()->create([
+            'username' => 'bulk-remove-user',
+            'email' => 'bulk-remove@example.com',
+        ]);
+
+        $otherUser = User::factory()->create([
+            'username' => 'bulk-remove-other',
+            'email' => 'bulk-remove-other@example.com',
+        ]);
+
+        $plan = SubscriptionPlan::query()->create([
+            'name' => 'Bulk Remove Workspace',
+            'slug' => 'bulk-remove-workspace',
+            'description' => 'Bulk remove workspace plan',
+            'is_active' => true,
+            'is_default' => false,
+            'sort_order' => 47,
+            'max_upload_size_mb' => 10,
+            'max_storage_mb' => 10,
+            'expire_options' => ['default', '24', 'never'],
+            'allow_public_links' => true,
+            'allow_password_protection' => true,
+            'allow_custom_expiry' => false,
+            'allow_never_expire' => true,
+            'allow_personal_storage' => true,
+            'allow_team_features' => false,
+            'allow_signature_workflow' => false,
+            'allow_folders' => false,
+            'allow_ai_features' => false,
+        ]);
+
+        PlanPolicy::assignPlan($user, $plan);
+        PlanPolicy::assignPlan($otherUser, $plan);
+
+        Storage::put('files/2026/05/owned-bulk-remove.pdf', 'owned');
+
+        $ownedFile = SharedFile::query()->create([
+            'owner_id' => $user->id,
+            'is_personal_storage' => true,
+            'original_name' => 'owned-bulk-remove.pdf',
+            'stored_name' => 'owned-bulk-remove.pdf',
+            'mime_type' => 'application/pdf',
+            'extension' => 'pdf',
+            'size' => 1000,
+            'storage_path' => 'files/2026/05/owned-bulk-remove.pdf',
+            'checksum' => hash('sha256', 'owned-bulk-remove'),
+            'expires_at' => null,
+            'status' => SharedFile::STATUS_ACTIVE,
+            'security_scan_status' => SharedFile::SECURITY_SCAN_CLEAN,
+        ]);
+
+        $sharedFile = SharedFile::query()->create([
+            'owner_id' => $otherUser->id,
+            'is_personal_storage' => true,
+            'original_name' => 'shared-bulk-remove.pdf',
+            'stored_name' => 'shared-bulk-remove.pdf',
+            'mime_type' => 'application/pdf',
+            'extension' => 'pdf',
+            'size' => 1000,
+            'storage_path' => 'files/2026/05/shared-bulk-remove.pdf',
+            'checksum' => hash('sha256', 'shared-bulk-remove'),
+            'expires_at' => null,
+            'status' => SharedFile::STATUS_ACTIVE,
+            'security_scan_status' => SharedFile::SECURITY_SCAN_CLEAN,
+        ]);
+
+        FileStorageAccess::query()->create([
+            'file_id' => $sharedFile->id,
+            'user_id' => $user->id,
+            'role' => FileStorageAccess::ROLE_MANAGER,
+            'context' => FileStorageAccess::CONTEXT_RECEIVED,
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('storage.bulk.destroy'), [
+                'file_ids' => [$ownedFile->id, $sharedFile->id],
+            ])
+            ->assertSessionHas('status', __('messages.personal_storage.bulk_removed_from_workspace', ['count' => 2]));
+
+        $this->assertDatabaseHas('files', [
+            'id' => $ownedFile->id,
+            'status' => SharedFile::STATUS_DELETED,
+        ]);
+        Storage::assertMissing('files/2026/05/owned-bulk-remove.pdf');
+
+        $this->assertDatabaseHas('files', [
+            'id' => $sharedFile->id,
+            'status' => SharedFile::STATUS_ACTIVE,
+        ]);
+        $this->assertDatabaseMissing('file_storage_access', [
+            'file_id' => $sharedFile->id,
+            'user_id' => $user->id,
+        ]);
+    }
+
+    public function test_user_can_star_and_filter_workspace_files(): void
+    {
+        Storage::fake();
+
+        $user = User::factory()->create([
+            'username' => 'star-user',
+            'email' => 'star-user@example.com',
+        ]);
+
+        $plan = SubscriptionPlan::query()->create([
+            'name' => 'Star Workspace',
+            'slug' => 'star-workspace',
+            'description' => 'Star workspace plan',
+            'is_active' => true,
+            'is_default' => false,
+            'sort_order' => 48,
+            'max_upload_size_mb' => 10,
+            'max_storage_mb' => 10,
+            'expire_options' => ['default', '24', 'never'],
+            'allow_public_links' => true,
+            'allow_password_protection' => true,
+            'allow_custom_expiry' => false,
+            'allow_never_expire' => true,
+            'allow_personal_storage' => true,
+            'allow_team_features' => false,
+            'allow_signature_workflow' => false,
+            'allow_folders' => false,
+            'allow_ai_features' => false,
+        ]);
+
+        PlanPolicy::assignPlan($user, $plan);
+
+        $starredFile = SharedFile::query()->create([
+            'owner_id' => $user->id,
+            'is_personal_storage' => true,
+            'original_name' => 'important-contract.pdf',
+            'stored_name' => 'important-contract.pdf',
+            'mime_type' => 'application/pdf',
+            'extension' => 'pdf',
+            'size' => 1000,
+            'storage_path' => 'files/2026/05/important-contract.pdf',
+            'checksum' => hash('sha256', 'important-contract'),
+            'expires_at' => null,
+            'status' => SharedFile::STATUS_ACTIVE,
+            'security_scan_status' => SharedFile::SECURITY_SCAN_CLEAN,
+        ]);
+
+        SharedFile::query()->create([
+            'owner_id' => $user->id,
+            'is_personal_storage' => true,
+            'original_name' => 'ordinary-file.pdf',
+            'stored_name' => 'ordinary-file.pdf',
+            'mime_type' => 'application/pdf',
+            'extension' => 'pdf',
+            'size' => 1000,
+            'storage_path' => 'files/2026/05/ordinary-file.pdf',
+            'checksum' => hash('sha256', 'ordinary-file'),
+            'expires_at' => null,
+            'status' => SharedFile::STATUS_ACTIVE,
+            'security_scan_status' => SharedFile::SECURITY_SCAN_CLEAN,
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('storage.star', $starredFile))
+            ->assertSessionHas('status', __('messages.personal_storage.star_updated'));
+
+        $this->assertDatabaseHas('file_storage_access', [
+            'file_id' => $starredFile->id,
+            'user_id' => $user->id,
+            'is_starred' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('storage.index', ['starred' => 'yes']))
+            ->assertOk()
+            ->assertSee('important-contract.pdf')
+            ->assertDontSee('ordinary-file.pdf')
+            ->assertSee(__('ui.storage.starred_badge'));
+    }
+
+    public function test_user_can_reparent_folder_without_creating_cycles(): void
+    {
+        $user = User::factory()->create([
+            'username' => 'folder-reparent-user',
+            'email' => 'folder-reparent@example.com',
+        ]);
+
+        $plan = SubscriptionPlan::query()->create([
+            'name' => 'Reparent Folder Workspace',
+            'slug' => 'reparent-folder-workspace',
+            'description' => 'Folder reparent workspace plan',
+            'is_active' => true,
+            'is_default' => false,
+            'sort_order' => 47,
+            'max_upload_size_mb' => 10,
+            'max_storage_mb' => 10,
+            'expire_options' => ['default', '24', 'never'],
+            'allow_public_links' => true,
+            'allow_password_protection' => true,
+            'allow_custom_expiry' => false,
+            'allow_never_expire' => true,
+            'allow_personal_storage' => true,
+            'allow_team_features' => false,
+            'allow_signature_workflow' => false,
+            'allow_folders' => true,
+            'allow_ai_features' => false,
+        ]);
+
+        PlanPolicy::assignPlan($user, $plan);
+
+        $parent = StorageFolder::query()->create([
+            'owner_id' => $user->id,
+            'parent_id' => null,
+            'name' => 'Parent',
+        ]);
+        $child = StorageFolder::query()->create([
+            'owner_id' => $user->id,
+            'parent_id' => $parent->id,
+            'name' => 'Child',
+        ]);
+        $grandchild = StorageFolder::query()->create([
+            'owner_id' => $user->id,
+            'parent_id' => $child->id,
+            'name' => 'Grandchild',
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('storage.folders.update', $child), [
+                'name' => 'Child',
+                'parent_id' => null,
+            ])
+            ->assertSessionHas('status', __('messages.personal_storage.folder_updated'));
+
+        $this->assertDatabaseHas('storage_folders', [
+            'id' => $child->id,
+            'parent_id' => null,
+        ]);
+
+        $child->forceFill(['parent_id' => $parent->id])->save();
+        $grandchild->forceFill(['parent_id' => $child->id])->save();
+
+        $this->actingAs($user)
+            ->patch(route('storage.folders.update', $parent), [
+                'name' => 'Parent',
+                'parent_id' => $grandchild->id,
+            ])
+            ->assertSessionHasErrors('folder');
+
+        $this->assertDatabaseHas('storage_folders', [
+            'id' => $parent->id,
+            'parent_id' => null,
         ]);
     }
 

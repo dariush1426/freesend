@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PersonalStorageController extends Controller
@@ -33,7 +34,14 @@ class PersonalStorageController extends Controller
         $contact = trim((string) $request->query('contact', ''));
         $scope = trim((string) $request->query('scope', 'all'));
         $folder = trim((string) $request->query('folder', 'all'));
+        $starred = (string) $request->query('starred', 'all') === 'yes' ? 'yes' : 'all';
         $period = trim((string) $request->query('period', 'all'));
+        $sort = in_array((string) $request->query('sort', 'newest'), ['newest', 'oldest', 'name_asc', 'name_desc', 'size_asc', 'size_desc'], true)
+            ? (string) $request->query('sort', 'newest')
+            : 'newest';
+        $perPage = in_array((int) $request->query('per_page', 24), [12, 24, 48], true)
+            ? (int) $request->query('per_page', 24)
+            : 24;
         $view = in_array((string) $request->query('view', 'list'), ['list', 'grid'], true)
             ? (string) $request->query('view', 'list')
             : 'list';
@@ -114,11 +122,16 @@ class PersonalStorageController extends Controller
                 $file->setAttribute('can_manage_workspace', $file->canUserManageStorage($user));
                 $file->setAttribute('workspace_folder_id', $workspaceAccess?->folder_id);
                 $file->setAttribute('workspace_folder_name', $workspaceAccess?->folder?->name);
+                $file->setAttribute('workspace_starred', (bool) ($workspaceAccess?->is_starred ?? false));
 
                 return $file;
             });
 
-        $filteredFiles = $this->applyStorageFilters($files, [
+        $folderFilterIds = $folderFeaturesEnabled
+            ? $this->folderAndDescendantIds($storageFolders, $folder)
+            : [];
+
+        $filteredFiles = $this->applyStorageSort($this->applyStorageFilters($files, [
             'search' => $search,
             'type' => $type,
             'sender' => $sender,
@@ -126,8 +139,10 @@ class PersonalStorageController extends Controller
             'contact' => $contact,
             'scope' => $scope,
             'folder' => $folder,
+            'folder_ids' => $folderFilterIds,
+            'starred' => $starred,
             'period' => $period,
-        ]);
+        ]), $sort);
         $availableSenders = $files
             ->filter(fn (SharedFile $file) => filled($file->getAttribute('origin_sender_username')))
             ->mapWithKeys(fn (SharedFile $file) => [
@@ -156,12 +171,23 @@ class PersonalStorageController extends Controller
         $folderTree = $folderFeaturesEnabled
             ? $this->buildFolderTree($storageFolders, $files, $folder)
             : [];
+        $page = max(1, (int) $request->query('page', 1));
+        $paginatedFiles = new LengthAwarePaginator(
+            $filteredFiles->forPage($page, $perPage)->values(),
+            $filteredFiles->count(),
+            $perPage,
+            $page,
+            [
+                'path' => route('storage.index'),
+                'query' => $request->query(),
+            ]
+        );
 
         return view('storage.index', [
             'planProfile' => PlanPolicy::profileForUser($user),
             'storageProfile' => PersonalStorageQuota::profileForUser($user),
             'previewPolicy' => $previewPolicy,
-            'files' => $filteredFiles,
+            'files' => $paginatedFiles,
             'viewMode' => $view,
             'filters' => [
                 'search' => $search,
@@ -171,7 +197,10 @@ class PersonalStorageController extends Controller
                 'contact' => $contact,
                 'scope' => $scope,
                 'folder' => $folder,
+                'starred' => $starred,
                 'period' => $period,
+                'sort' => $sort,
+                'per_page' => $perPage,
             ],
             'availableSenders' => $availableSenders,
             'availableRecipients' => $availableRecipients,
@@ -217,10 +246,28 @@ class PersonalStorageController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
+            'parent_id' => ['nullable', 'integer', 'exists:storage_folders,id'],
         ]);
+
+        $parentId = $validated['parent_id'] ?? null;
+
+        if ($parentId) {
+            $folders = StorageFolder::query()
+                ->where('owner_id', $user->id)
+                ->get(['id', 'owner_id', 'parent_id', 'name']);
+            $parent = StorageFolder::query()
+                ->where('owner_id', $user->id)
+                ->findOrFail($parentId);
+            $blockedParentIds = $this->folderAndDescendantIds($folders, (string) $folder->id);
+
+            if (in_array((int) $parent->id, $blockedParentIds, true)) {
+                return back()->withErrors(['folder' => __('messages.personal_storage.folder_cycle')]);
+            }
+        }
 
         $folder->forceFill([
             'name' => trim((string) $validated['name']),
+            'parent_id' => $parentId,
         ])->save();
 
         return back()->with('status', __('messages.personal_storage.folder_updated'));
@@ -256,12 +303,22 @@ class PersonalStorageController extends Controller
 
         $validated = $request->validate([
             'folder_id' => ['nullable', 'integer', 'exists:storage_folders,id'],
+            'new_folder_name' => ['nullable', 'string', 'max:120'],
         ]);
 
         $user = $request->user();
         $folderId = $validated['folder_id'] ?? null;
+        $newFolderName = trim((string) ($validated['new_folder_name'] ?? ''));
 
-        if ($folderId) {
+        if ($newFolderName !== '') {
+            $folder = StorageFolder::query()->create([
+                'owner_id' => $user->id,
+                'parent_id' => null,
+                'name' => $newFolderName,
+            ]);
+
+            $folderId = $folder->id;
+        } elseif ($folderId) {
             StorageFolder::query()
                 ->where('owner_id', $user->id)
                 ->findOrFail($folderId);
@@ -270,26 +327,166 @@ class PersonalStorageController extends Controller
         $workspaceAccess = $file->workspaceAccessFor($user);
         abort_unless($workspaceAccess, 403);
 
-        $workspaceAccess->forceFill([
-            'folder_id' => $folderId,
-        ])->save();
+        FileStorageAccess::query()->updateOrCreate(
+            [
+                'file_id' => $file->id,
+                'user_id' => $user->id,
+            ],
+            [
+                'role' => $workspaceAccess->role ?: FileStorageAccess::ROLE_OWNER,
+                'context' => $workspaceAccess->context ?: FileStorageAccess::CONTEXT_OWNED,
+                'folder_id' => $folderId,
+            ]
+        );
 
         return back()->with('status', __('messages.personal_storage.moved_to_folder'));
+    }
+
+    public function bulkMoveToFolder(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        $this->ensureFolderFeaturesEnabled($user);
+        abort_unless(Schema::hasTable('storage_folders') && Schema::hasTable('file_storage_access'), 403);
+
+        $validated = $request->validate([
+            'file_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'file_ids.*' => ['integer', 'distinct', 'exists:files,id'],
+            'folder_id' => ['nullable', 'integer', 'exists:storage_folders,id'],
+            'new_folder_name' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $folderId = $validated['folder_id'] ?? null;
+        $newFolderName = trim((string) ($validated['new_folder_name'] ?? ''));
+
+        if ($newFolderName !== '') {
+            $folder = StorageFolder::query()->create([
+                'owner_id' => $user->id,
+                'parent_id' => null,
+                'name' => $newFolderName,
+            ]);
+
+            $folderId = $folder->id;
+        } elseif ($folderId) {
+            StorageFolder::query()
+                ->where('owner_id', $user->id)
+                ->findOrFail($folderId);
+        }
+
+        $files = SharedFile::query()
+            ->with(['workspaceAccesses' => fn ($query) => $query->where('user_id', $user->id)])
+            ->whereIn('id', $validated['file_ids'])
+            ->where('is_personal_storage', true)
+            ->where('status', '!=', SharedFile::STATUS_DELETED)
+            ->get();
+
+        abort_unless($files->count() === count($validated['file_ids']), 403);
+
+        foreach ($files as $file) {
+            abort_unless($file->canUserManageStorage($user), 403);
+
+            $workspaceAccess = $file->workspaceAccessFor($user);
+            abort_unless($workspaceAccess, 403);
+
+            FileStorageAccess::query()->updateOrCreate(
+                [
+                    'file_id' => $file->id,
+                    'user_id' => $user->id,
+                ],
+                [
+                    'role' => $workspaceAccess->role ?: FileStorageAccess::ROLE_OWNER,
+                    'context' => $workspaceAccess->context ?: FileStorageAccess::CONTEXT_OWNED,
+                    'folder_id' => $folderId,
+                ]
+            );
+        }
+
+        return back()->with('status', __('messages.personal_storage.bulk_moved_to_folder', [
+            'count' => $files->count(),
+        ]));
+    }
+
+    public function bulkDestroy(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'file_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'file_ids.*' => ['integer', 'distinct', 'exists:files,id'],
+        ]);
+
+        $files = SharedFile::query()
+            ->with(['workspaceAccesses' => fn ($query) => $query->where('user_id', $user->id)])
+            ->whereIn('id', $validated['file_ids'])
+            ->where('is_personal_storage', true)
+            ->where('status', '!=', SharedFile::STATUS_DELETED)
+            ->get();
+
+        abort_unless($files->count() === count($validated['file_ids']), 403);
+
+        foreach ($files as $file) {
+            abort_unless($file->canUserManageStorage($user), 403);
+
+            $this->removeFileFromWorkspace($file, $user);
+        }
+
+        return back()->with('status', __('messages.personal_storage.bulk_removed_from_workspace', [
+            'count' => $files->count(),
+        ]));
+    }
+
+    public function renameFile(Request $request, SharedFile $file): RedirectResponse
+    {
+        $this->ensureManageableStorageFile($request, $file);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $name = trim((string) $validated['name']);
+
+        if ($name === '') {
+            return back()->withErrors([
+                'name' => __('validation.required', ['attribute' => __('ui.storage.file_rename_label')]),
+            ]);
+        }
+
+        $file->forceFill([
+            'original_name' => $name,
+        ])->save();
+
+        return back()->with('status', __('messages.personal_storage.file_renamed'));
+    }
+
+    public function toggleStar(Request $request, SharedFile $file): RedirectResponse
+    {
+        $this->ensureAccessibleStorageFile($request, $file);
+        abort_unless(Schema::hasTable('file_storage_access') && Schema::hasColumn('file_storage_access', 'is_starred'), 403);
+
+        $user = $request->user();
+        $workspaceAccess = $file->workspaceAccessFor($user);
+        abort_unless($workspaceAccess, 403);
+
+        FileStorageAccess::query()->updateOrCreate(
+            [
+                'file_id' => $file->id,
+                'user_id' => $user->id,
+            ],
+            [
+                'role' => $workspaceAccess->role ?: FileStorageAccess::ROLE_OWNER,
+                'context' => $workspaceAccess->context ?: FileStorageAccess::CONTEXT_OWNED,
+                'folder_id' => $workspaceAccess->folder_id,
+                'is_starred' => ! (bool) $workspaceAccess->is_starred,
+            ]
+        );
+
+        return back()->with('status', __('messages.personal_storage.star_updated'));
     }
 
     public function preview(Request $request, SharedFile $file): StreamedResponse|RedirectResponse
     {
         $this->ensureAccessibleStorageFile($request, $file);
 
-        if ($file->isSecurityScanPending()) {
-            return back()->withErrors(['preview' => __('ui.errors.preview_pending')]);
-        }
-
-        if (! $file->isSecurityApproved()) {
-            return back()->withErrors(['preview' => __('ui.errors.preview_security')]);
-        }
-
-        if (! $file->isDownloadable()) {
+        if (! $file->isPreviewableFileAvailable()) {
             return back()->withErrors(['preview' => __('ui.errors.preview_unavailable')]);
         }
 
@@ -343,26 +540,37 @@ class PersonalStorageController extends Controller
         $this->ensureManageableStorageFile($request, $file);
         $user = $request->user();
 
+        $this->removeFileFromWorkspace($file, $user);
+
+        return back()->with('status', __(
+            $file->owner_id === $user->id
+                ? 'messages.personal_storage.deleted'
+                : 'messages.personal_storage.removed_from_workspace'
+        ));
+    }
+
+    private function removeFileFromWorkspace(SharedFile $file, User $user): void
+    {
         if ($file->owner_id !== $user->id) {
             FileStorageAccess::query()
                 ->where('file_id', $file->id)
                 ->where('user_id', $user->id)
                 ->delete();
 
-            return back()->with('status', __('messages.personal_storage.removed_from_workspace'));
+            return;
         }
 
-        if ($file->status !== SharedFile::STATUS_DELETED) {
-            if ($file->storage_path !== '' && Storage::exists($file->storage_path)) {
-                Storage::delete($file->storage_path);
-            }
-
-            $file->forceFill([
-                'status' => SharedFile::STATUS_DELETED,
-            ])->save();
+        if ($file->status === SharedFile::STATUS_DELETED) {
+            return;
         }
 
-        return back()->with('status', __('messages.personal_storage.deleted'));
+        if ($file->storage_path !== '' && Storage::exists($file->storage_path)) {
+            Storage::delete($file->storage_path);
+        }
+
+        $file->forceFill([
+            'status' => SharedFile::STATUS_DELETED,
+        ])->save();
     }
 
     private function ensureAccessibleStorageFile(Request $request, SharedFile $file): void
@@ -425,6 +633,13 @@ class PersonalStorageController extends Controller
         $contact = trim((string) ($filters['contact'] ?? ''));
         $scope = trim((string) ($filters['scope'] ?? 'all'));
         $folder = trim((string) ($filters['folder'] ?? 'all'));
+        $starred = trim((string) ($filters['starred'] ?? 'all'));
+        $folderIds = collect($filters['folder_ids'] ?? [])
+            ->map(fn (mixed $value): int => (int) $value)
+            ->filter(fn (int $value): bool => $value > 0)
+            ->unique()
+            ->values()
+            ->all();
         $period = trim((string) ($filters['period'] ?? 'all'));
         $fromDate = $this->resolvePeriodStart($period);
         $allowedScopes = [
@@ -436,7 +651,11 @@ class PersonalStorageController extends Controller
         $normalizedScope = in_array($scope, $allowedScopes, true) ? $scope : 'all';
 
         return $files
-            ->filter(function (SharedFile $file) use ($search, $types, $sender, $recipient, $contact, $folder, $fromDate): bool {
+            ->filter(function (SharedFile $file) use ($search, $types, $sender, $recipient, $contact, $folder, $folderIds, $starred, $fromDate): bool {
+                if ($starred === 'yes' && ! (bool) $file->getAttribute('workspace_starred')) {
+                    return false;
+                }
+
                 if ($types !== [] && ! in_array((string) $file->getAttribute('storage_category'), $types, true)) {
                     return false;
                 }
@@ -464,7 +683,7 @@ class PersonalStorageController extends Controller
                         if ($folderId !== null) {
                             return false;
                         }
-                    } elseif ((string) $folderId !== $folder) {
+                    } elseif (! in_array((int) $folderId, $folderIds, true)) {
                         return false;
                     }
                 }
@@ -505,6 +724,18 @@ class PersonalStorageController extends Controller
             ->values();
     }
 
+    private function applyStorageSort(Collection $files, string $sort): Collection
+    {
+        return match ($sort) {
+            'oldest' => $files->sortBy(fn (SharedFile $file) => $file->created_at?->getTimestamp() ?? 0)->values(),
+            'name_asc' => $files->sortBy(fn (SharedFile $file) => mb_strtolower((string) $file->original_name))->values(),
+            'name_desc' => $files->sortByDesc(fn (SharedFile $file) => mb_strtolower((string) $file->original_name))->values(),
+            'size_asc' => $files->sortBy(fn (SharedFile $file) => (int) $file->size)->values(),
+            'size_desc' => $files->sortByDesc(fn (SharedFile $file) => (int) $file->size)->values(),
+            default => $files->sortByDesc(fn (SharedFile $file) => $file->created_at?->getTimestamp() ?? 0)->values(),
+        };
+    }
+
     private function resolvePeriodStart(string $period): ?Carbon
     {
         return match ($period) {
@@ -542,21 +773,44 @@ class PersonalStorageController extends Controller
         return $items;
     }
 
+    private function folderAndDescendantIds(Collection $folders, string $folder): array
+    {
+        if ($folder === '' || $folder === 'all' || $folder === 'root') {
+            return [];
+        }
+
+        $folderId = (int) $folder;
+
+        if ($folderId < 1 || ! $folders->contains('id', $folderId)) {
+            return [];
+        }
+
+        $ids = [$folderId];
+
+        foreach ($folders->where('parent_id', $folderId) as $child) {
+            $ids = array_merge($ids, $this->folderAndDescendantIds($folders, (string) $child->id));
+        }
+
+        return array_values(array_unique($ids));
+    }
+
     private function buildFolderTree(Collection $folders, Collection $files, string $activeFolder, ?int $parentId = null): array
     {
         return $folders
             ->where('parent_id', $parentId)
             ->sortBy('name')
             ->map(function (StorageFolder $folder) use ($folders, $files, $activeFolder): array {
-                $directCount = $files
-                    ->filter(fn (SharedFile $file) => (int) ($file->getAttribute('workspace_folder_id') ?? 0) === $folder->id)
+                $folderIds = $this->folderAndDescendantIds($folders, (string) $folder->id);
+                $treeCount = $files
+                    ->filter(fn (SharedFile $file) => in_array((int) ($file->getAttribute('workspace_folder_id') ?? 0), $folderIds, true))
                     ->count();
                 $children = $this->buildFolderTree($folders, $files, $activeFolder, $folder->id);
 
                 return [
                     'id' => $folder->id,
                     'name' => $folder->name,
-                    'count' => $directCount,
+                    'parent_id' => $folder->parent_id,
+                    'count' => $treeCount,
                     'active' => (string) $folder->id === $activeFolder,
                     'children' => $children,
                 ];

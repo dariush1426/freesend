@@ -73,7 +73,11 @@
                     @endphp
                     <a class="thread-card {{ $thread['unread'] > 0 ? 'unread' : '' }} {{ $isActiveThread ? 'active' : '' }}" href="{{ $threadHref }}">
                         <div class="thread-main">
-                            <span class="avatar">{{ $initial }}</span>
+                            @if($isStorageThread)
+                                <span class="avatar">{{ $initial }}</span>
+                            @else
+                                @include('partials.user-avatar', ['user' => $thread['user']])
+                            @endif
                             <div class="thread-meta">
                                 <strong>{{ $isStorageThread ? $name : $thread['user']->username }}</strong>
                                 @if(! $isStorageThread && $thread['user']->full_name)
@@ -134,7 +138,11 @@
                 @endphp
                 <div class="panel conversation-card" style="margin-top: 18px;">
                     <div class="thread-main">
-                        <span class="avatar large">{{ $activeInitial }}</span>
+                        @if($activeIsStorageThread)
+                            <span class="avatar large">{{ $activeInitial }}</span>
+                        @else
+                            @include('partials.user-avatar', ['user' => $activeThread['user'], 'class' => 'large'])
+                        @endif
                         <div class="meta-stack">
                             <h2 style="margin:0;display:flex;align-items:center;gap:8px;"><span>{{ $activeIsStorageThread ? $activeName : $activeThread['user']->username }}</span></h2>
                             @if(! $activeIsStorageThread && $activeThread['user']->full_name)

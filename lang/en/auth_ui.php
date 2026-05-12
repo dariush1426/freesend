@@ -15,6 +15,7 @@ return [
         'page_title' => 'Register',
         'title' => 'Register',
         'subtitle' => 'The first registered user automatically becomes the system administrator.',
+        'prefill_notice' => 'Your quick-send details were prefilled. Choose a username and password to finish.',
         'username' => 'Username',
         'full_name' => 'Full name',
         'email' => 'Email',

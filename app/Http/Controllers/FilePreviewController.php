@@ -29,15 +29,7 @@ class FilePreviewController extends Controller
             $file->refresh();
         }
 
-        if ($file->isSecurityScanPending()) {
-            return back()->withErrors(['preview' => __('ui.errors.preview_pending')]);
-        }
-
-        if (! $file->isSecurityApproved()) {
-            return back()->withErrors(['preview' => __('ui.errors.preview_security')]);
-        }
-
-        if (! $file->isDownloadable()) {
+        if (! $file->isPreviewableFileAvailable()) {
             return back()->withErrors(['preview' => __('ui.errors.preview_unavailable')]);
         }
 

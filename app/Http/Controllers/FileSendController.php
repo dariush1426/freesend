@@ -40,15 +40,19 @@ class FileSendController extends Controller
         $publicLinkFeatureNotice = $publicLinkFeatureEnabled
             ? null
             : ($publicLinksEnabledByAdmin ? __('ui.send.public_link_disabled_by_plan') : __('ui.send.public_link_disabled'));
-        $effectiveMaxFileSizeMb = PlanPolicy::effectiveMaxUploadSizeMb(
+        $systemMaxFileSizeMb = max(1, (int) Setting::getValue('max_file_size_mb', '20'));
+        $senderMaxFileSizeMb = PlanPolicy::effectiveMaxUploadSizeMb(
             $request->user(),
-            max(1, (int) Setting::getValue('max_file_size_mb', '20'))
+            $systemMaxFileSizeMb
         );
         $prefilledReceiver = trim((string) $request->query('receiver', ''));
         $prefilledReceiverUser = $prefilledReceiver !== ''
             ? $this->resolveSingleReceiver($prefilledReceiver)
             : null;
         $receiverLocked = $prefilledReceiverUser !== null;
+        $effectiveMaxFileSizeMb = $receiverLocked
+            ? $this->effectiveMaxUploadSizeMbForSend($request->user(), [$prefilledReceiverUser], $systemMaxFileSizeMb)
+            : $senderMaxFileSizeMb;
         $personalStorageEnabled = (bool) ($planProfile['allow_personal_storage'] ?? false);
         $senderNoExpiryCapabilities = $this->senderNoExpiryCapabilities($request->user());
         $prefilledReceiverCapabilities = $prefilledReceiverUser
@@ -87,7 +91,7 @@ class FileSendController extends Controller
             'publicLinkFeatureEnabled' => $publicLinkFeatureEnabled,
             'publicLinkFeatureNotice' => $publicLinkFeatureNotice,
             'chunkUploadThresholdBytes' => max(1, (int) Setting::getValue('chunk_upload_threshold_mb', '8')) * 1024 * 1024,
-            'chunkUploadSizeBytes' => max(1, (int) Setting::getValue('chunk_upload_size_mb', '2')) * 1024 * 1024,
+            'chunkUploadSizeBytes' => $this->effectiveChunkUploadSizeBytes(),
             'prefilledReceiver' => $receiverLocked ? $prefilledReceiverUser->username : $prefilledReceiver,
             'prefilledReceiverUser' => $prefilledReceiverUser,
             'prefilledReceiverCapabilities' => $prefilledReceiverCapabilities,
@@ -104,9 +108,10 @@ class FileSendController extends Controller
         $destination = in_array((string) $request->input('destination', 'send'), ['send', 'storage'], true)
             ? (string) $request->input('destination', 'send')
             : 'send';
-        $maxFileSizeMb = PlanPolicy::effectiveMaxUploadSizeMb(
+        $systemMaxFileSizeMb = max(1, (int) Setting::getValue('max_file_size_mb', '20'));
+        $senderMaxFileSizeMb = PlanPolicy::effectiveMaxUploadSizeMb(
             $request->user(),
-            max(1, (int) Setting::getValue('max_file_size_mb', '20'))
+            $systemMaxFileSizeMb
         );
         $allowedExtensions = collect(explode(',', Setting::getValue('allowed_extensions', '')))
             ->map(fn (string $extension) => trim(strtolower($extension)))
@@ -116,7 +121,7 @@ class FileSendController extends Controller
         $rules = [
             'destination' => ['nullable', 'string', 'in:send,storage'],
             'message' => ['nullable', 'string', 'max:1000'],
-            'file' => ['nullable', 'file', 'max:'.($maxFileSizeMb * 1024)],
+            'file' => ['nullable', 'file', 'max:'.($systemMaxFileSizeMb * 1024)],
             'uploaded_file_token' => ['nullable', 'string', 'max:120'],
         ];
 
@@ -161,7 +166,7 @@ class FileSendController extends Controller
             }
 
             $uploadData = $hasUploadInput
-                ? $this->resolveUploadData($request, $validated, $maxFileSizeMb, $allowedExtensions)
+                ? $this->resolveUploadData($request, $validated, $senderMaxFileSizeMb, $allowedExtensions)
                 : $this->buildTextNoteUploadData($storageMessage);
 
             if (isset($uploadData['error'])) {
@@ -202,7 +207,7 @@ class FileSendController extends Controller
             ]);
 
         if (($uploadData['security_scan_status'] ?? SharedFile::SECURITY_SCAN_PENDING) === SharedFile::SECURITY_SCAN_PENDING) {
-            ScanUploadedFileJob::dispatch($sharedFile->id);
+            ScanUploadedFileJob::dispatchSync($sharedFile->id);
         }
 
         $this->syncPersonalStorageWorkspaceAccess(
@@ -216,6 +221,7 @@ class FileSendController extends Controller
             $request->user(),
             $storageMessage
         );
+        PersonalStorageQuota::disableNoExpiryReceivingIfUnavailable($request->user());
 
         return redirect()
             ->route('storage.index')
@@ -277,8 +283,14 @@ class FileSendController extends Controller
             ]);
         }
 
+        $sendMaxFileSizeMb = $this->effectiveMaxUploadSizeMbForSend(
+            $request->user(),
+            $receivers['users'],
+            $systemMaxFileSizeMb
+        );
+
         $uploadData = $hasUploadInput
-            ? $this->resolveUploadData($request, $validated, $maxFileSizeMb, $allowedExtensions)
+            ? $this->resolveUploadData($request, $validated, $sendMaxFileSizeMb, $allowedExtensions)
             : $this->buildTextNoteUploadData($sendMessage);
 
         if (isset($uploadData['error'])) {
@@ -330,7 +342,7 @@ class FileSendController extends Controller
         ]);
 
         if (($uploadData['security_scan_status'] ?? SharedFile::SECURITY_SCAN_PENDING) === SharedFile::SECURITY_SCAN_PENDING) {
-            ScanUploadedFileJob::dispatch($sharedFile->id);
+            ScanUploadedFileJob::dispatchSync($sharedFile->id);
         }
 
         if ($sharedFile->is_personal_storage) {
@@ -344,6 +356,8 @@ class FileSendController extends Controller
                 $singleReceiver,
                 $workspaceContext
             );
+
+            PersonalStorageQuota::disableNoExpiryReceivingIfUnavailable($sharedFile->owner);
         }
 
         $publicLinkRequested = $request->boolean('public_link_enabled');
@@ -387,11 +401,13 @@ class FileSendController extends Controller
 
         if ($fileSends->count() === 1) {
             $receiver = $receivers['users'][0];
-            $redirect = redirect()
-                ->route('conversations.show', $receiver)
-                ->with('status', $status);
-
             $firstSend = $fileSends->first();
+            $redirect = redirect()
+                ->route('conversations.show', array_filter([
+                    'user' => $receiver,
+                    'highlight' => $firstSend?->id,
+                ]))
+                ->with('status', $status);
 
             if ($firstSend && $firstSend->public_link_enabled && $firstSend->public_token) {
                 $redirect->with('public_link_url', route('public-files.download', $firstSend->public_token));
@@ -791,6 +807,46 @@ class FileSendController extends Controller
         return 'chunk_upload_token:'.$token;
     }
 
+    private function effectiveChunkUploadSizeBytes(): int
+    {
+        $configured = max(1, (int) Setting::getValue('chunk_upload_size_mb', '2')) * 1024 * 1024;
+        $phpLimit = min(
+            $this->phpIniSizeToBytes('upload_max_filesize'),
+            $this->phpIniSizeToBytes('post_max_size')
+        );
+
+        if ($phpLimit === PHP_INT_MAX) {
+            return $configured;
+        }
+
+        if ($phpLimit < 128 * 1024) {
+            return max(1, min($configured, $phpLimit));
+        }
+
+        $safeLimit = min((int) floor($phpLimit * 0.85), $phpLimit - (128 * 1024));
+
+        return max(64 * 1024, min($configured, $safeLimit));
+    }
+
+    private function phpIniSizeToBytes(string $key): int
+    {
+        $value = trim((string) ini_get($key));
+
+        if ($value === '' || $value === '-1' || $value === '0') {
+            return PHP_INT_MAX;
+        }
+
+        $unit = strtolower(substr($value, -1));
+        $number = (float) $value;
+
+        return match ($unit) {
+            'g' => (int) ($number * 1024 * 1024 * 1024),
+            'm' => (int) ($number * 1024 * 1024),
+            'k' => (int) ($number * 1024),
+            default => (int) $number,
+        };
+    }
+
     private function buildTextNoteUploadData(string $content): array
     {
         $normalizedContent = trim($content);
@@ -824,6 +880,25 @@ class FileSendController extends Controller
         ];
     }
 
+    private function effectiveMaxUploadSizeMbForSend(User $sender, array $receivers, int $systemMaxMb): int
+    {
+        $senderMaxMb = PlanPolicy::effectiveMaxUploadSizeMb($sender, $systemMaxMb);
+
+        if (count($receivers) !== 1) {
+            return $senderMaxMb;
+        }
+
+        $receiver = $receivers[0];
+        $receiverProfile = PlanPolicy::profileForUser($receiver);
+        $receiverPlanMaxMb = $receiverProfile['max_upload_size_mb'] ?? null;
+
+        if (! $receiverProfile['subscription'] || ! is_numeric($receiverPlanMaxMb) || (int) $receiverPlanMaxMb < 1) {
+            return $senderMaxMb;
+        }
+
+        return min($systemMaxMb, max($senderMaxMb, (int) $receiverPlanMaxMb));
+    }
+
     private function receiverSendCapabilities(array $users, ?int $incomingSize = null): array
     {
         if ($users === []) {
@@ -848,6 +923,12 @@ class FileSendController extends Controller
         $user = $users[0];
         $planProfile = PlanPolicy::profileForUser($user);
         $storageProfile = PersonalStorageQuota::profileForUser($user);
+
+        if (PersonalStorageQuota::disableNoExpiryReceivingIfUnavailable($user, $storageProfile)) {
+            $user->refresh();
+            $storageProfile = PersonalStorageQuota::profileForUser($user);
+        }
+
         $supportsPersonalStorage = (bool) ($planProfile['allow_personal_storage'] ?? false);
         $receiverAllowsNoExpiry = (bool) $user->allow_receive_no_expiry;
         $storageFull = $supportsPersonalStorage

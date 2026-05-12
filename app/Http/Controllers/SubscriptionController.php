@@ -27,7 +27,8 @@ class SubscriptionController extends Controller
                 ->orderBy('price_amount')
                 ->orderBy('name')
                 ->get(),
-            'gatewayReady' => $gateway->isEnabled() && $gateway->isConfigured(),
+            'gatewayReady' => false,
+            'paidPurchasesAvailable' => $this->paidPurchasesAvailable(),
             'recentOrders' => SubscriptionOrder::query()
                 ->with(['plan', 'latestPayment'])
                 ->where('user_id', $request->user()->id)
@@ -58,6 +59,12 @@ class SubscriptionController extends Controller
                 ->with('status', __('messages.subscriptions.free_plan_activated', [
                     'plan' => $plan->name,
                 ]));
+        }
+
+        if (! $this->paidPurchasesAvailable()) {
+            return back()->withErrors([
+                'payment' => __('messages.subscriptions.paid_purchase_disabled_for_launch'),
+            ]);
         }
 
         if (! $gateway->isEnabled()) {
@@ -149,5 +156,10 @@ class SubscriptionController extends Controller
         ])->save();
 
         return redirect()->away($redirectUrl);
+    }
+
+    private function paidPurchasesAvailable(): bool
+    {
+        return false;
     }
 }

@@ -6,15 +6,20 @@
     <section class="grid cols-2">
         <div class="panel">
             <div class="thread-main" style="margin-bottom: 18px;">
-                <span class="avatar large">{{ mb_substr($user->full_name ?: $user->username, 0, 1) }}</span>
+                @include('partials.user-avatar', ['user' => $user, 'class' => 'large'])
                 <div class="meta-stack">
                     <h1 style="margin: 0;">{{ __('ui.profile.title') }}</h1>
                     <span class="muted">{{ $user->username }}</span>
                 </div>
             </div>
 
-            <form method="post" action="{{ route('profile.update') }}">
+            <form method="post" action="{{ route('profile.update') }}" enctype="multipart/form-data">
                 @csrf
+                <div class="field">
+                    <label for="avatar">{{ __('ui.profile.avatar') }}</label>
+                    <input id="avatar" name="avatar" type="file" accept="image/png,image/jpeg,image/webp">
+                    <div class="muted" style="margin-top: 8px;">{{ __('ui.profile.avatar_hint') }}</div>
+                </div>
                 <div class="field">
                     <label for="full_name">{{ __('ui.profile.full_name') }}</label>
                     <input id="full_name" name="full_name" value="{{ old('full_name', $user->full_name) }}">

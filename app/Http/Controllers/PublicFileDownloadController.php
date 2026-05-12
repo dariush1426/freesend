@@ -22,7 +22,7 @@ class PublicFileDownloadController extends Controller
         abort_unless($fileSend !== null, 404);
 
         $file = $fileSend->file;
-        $error = $this->validateAccess($fileSend, $file);
+        $error = $this->validateAccess($fileSend, $file, false);
         $isUnlocked = $this->isUnlocked($request, $fileSend);
         $needsPassword = $file->isPasswordProtected() && ! $isUnlocked;
         $previewPolicy = FilePreviewPolicy::fromSettings();
@@ -175,7 +175,7 @@ class PublicFileDownloadController extends Controller
             ->first();
     }
 
-    private function validateAccess(FileSend $fileSend, SharedFile $file): ?string
+    private function validateAccess(FileSend $fileSend, SharedFile $file, bool $checkSecurity = true): ?string
     {
         if (Setting::getValue('public_link_enabled', 'false') !== 'true') {
             return __('messages.public_download.disabled_by_admin');
@@ -190,15 +190,19 @@ class PublicFileDownloadController extends Controller
             $file->refresh();
         }
 
-        if ($file->isSecurityScanPending()) {
+        if ($checkSecurity && $file->isSecurityScanPending()) {
             return __('messages.public_download.security_pending');
         }
 
-        if (! $file->isSecurityApproved()) {
+        if ($checkSecurity && ! $file->isSecurityApproved()) {
             return __('messages.public_download.security_rejected');
         }
 
-        if (! $file->isDownloadable()) {
+        if ($checkSecurity && ! $file->isDownloadable()) {
+            return __('messages.public_download.not_downloadable');
+        }
+
+        if (! $checkSecurity && ! $file->isPreviewableFileAvailable()) {
             return __('messages.public_download.not_downloadable');
         }
 

@@ -68,7 +68,7 @@ return new class extends Migration
             'allow_team_features' => false,
             'max_team_members' => null,
             'allow_signature_workflow' => false,
-            'allow_folders' => true,
+            'allow_folders' => false,
             'allow_ai_features' => false,
             'created_at' => now(),
             'updated_at' => now(),

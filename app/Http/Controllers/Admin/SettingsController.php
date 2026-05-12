@@ -104,6 +104,28 @@ class SettingsController extends Controller
             'pwa_logo_desktop' => ['nullable', 'file', 'image', 'max:4096'],
             'pwa_logo_mobile' => ['nullable', 'file', 'image', 'max:4096'],
             'pwa_logo_retina' => ['nullable', 'file', 'image', 'max:4096'],
+            'landing_hero_badge' => ['required', 'string', 'max:120'],
+            'landing_hero_title' => ['required', 'string', 'max:160'],
+            'landing_hero_body' => ['required', 'string', 'max:500'],
+            'landing_primary_cta' => ['required', 'string', 'max:80'],
+            'landing_secondary_cta' => ['required', 'string', 'max:80'],
+            'landing_hero_heading_tag' => ['required', 'string', 'in:h1,h2'],
+            'landing_hero_title_size' => ['required', 'integer', 'min:28', 'max:72'],
+            'landing_hero_title_weight' => ['required', 'integer', 'in:500,600,700,800,900'],
+            'landing_hero_image' => ['nullable', 'file', 'image', 'max:4096'],
+            'landing_features_title' => ['required', 'string', 'max:160'],
+            'landing_features_body' => ['required', 'string', 'max:500'],
+            'landing_section_title_size' => ['required', 'integer', 'min:22', 'max:48'],
+            'landing_section_title_weight' => ['required', 'integer', 'in:500,600,700,800,900'],
+            'landing_feature_1_title' => ['required', 'string', 'max:120'],
+            'landing_feature_1_body' => ['required', 'string', 'max:420'],
+            'landing_feature_1_image' => ['nullable', 'file', 'image', 'max:4096'],
+            'landing_feature_2_title' => ['required', 'string', 'max:120'],
+            'landing_feature_2_body' => ['required', 'string', 'max:420'],
+            'landing_feature_2_image' => ['nullable', 'file', 'image', 'max:4096'],
+            'landing_feature_3_title' => ['required', 'string', 'max:120'],
+            'landing_feature_3_body' => ['required', 'string', 'max:420'],
+            'landing_feature_3_image' => ['nullable', 'file', 'image', 'max:4096'],
         ]);
 
         foreach (Setting::DEFAULTS as $key => $default) {
@@ -127,7 +149,11 @@ class SettingsController extends Controller
                     : (string) Setting::getValue('mail_password', $default),
                 'pwa_logo_desktop_path',
                 'pwa_logo_mobile_path',
-                'pwa_logo_retina_path' => (string) Setting::getValue($key, $default),
+                'pwa_logo_retina_path',
+                'landing_hero_image_path',
+                'landing_feature_1_image_path',
+                'landing_feature_2_image_path',
+                'landing_feature_3_image_path' => (string) Setting::getValue($key, $default),
                 default => (string) ($validated[$key] ?? $default),
             };
 
@@ -137,6 +163,10 @@ class SettingsController extends Controller
         $this->storePwaLogo($request, 'pwa_logo_desktop', 'pwa_logo_desktop_path');
         $this->storePwaLogo($request, 'pwa_logo_mobile', 'pwa_logo_mobile_path');
         $this->storePwaLogo($request, 'pwa_logo_retina', 'pwa_logo_retina_path');
+        $this->storeLandingImage($request, 'landing_hero_image', 'landing_hero_image_path');
+        $this->storeLandingImage($request, 'landing_feature_1_image', 'landing_feature_1_image_path');
+        $this->storeLandingImage($request, 'landing_feature_2_image', 'landing_feature_2_image_path');
+        $this->storeLandingImage($request, 'landing_feature_3_image', 'landing_feature_3_image_path');
 
         return back()->with('status', __('messages.admin.settings_saved'));
     }
@@ -225,6 +255,25 @@ class SettingsController extends Controller
 
         if ($oldPath !== '' && Storage::exists($oldPath)) {
             Storage::delete($oldPath);
+        }
+    }
+
+    private function storeLandingImage(Request $request, string $inputKey, string $settingKey): void
+    {
+        $file = $request->file($inputKey);
+
+        if (! $file) {
+            return;
+        }
+
+        $oldPath = (string) Setting::getValue($settingKey, '');
+        $extension = mb_strtolower((string) $file->getClientOriginalExtension());
+        $path = $file->storeAs('landing', $settingKey.'_'.time().'.'.$extension, 'public');
+
+        Setting::setValue($settingKey, $path);
+
+        if ($oldPath !== '' && Storage::disk('public')->exists($oldPath)) {
+            Storage::disk('public')->delete($oldPath);
         }
     }
 }

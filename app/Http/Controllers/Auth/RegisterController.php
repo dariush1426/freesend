@@ -13,9 +13,17 @@ use Illuminate\View\View;
 
 class RegisterController extends Controller
 {
-    public function create(): View
+    public function create(Request $request): View
     {
-        return view('auth.register');
+        $prefillContact = trim((string) $request->query('contact', ''));
+
+        return view('auth.register', [
+            'prefill' => [
+                'full_name' => trim((string) $request->query('name', '')),
+                'email' => filter_var($prefillContact, FILTER_VALIDATE_EMAIL) ? $prefillContact : '',
+                'mobile' => filter_var($prefillContact, FILTER_VALIDATE_EMAIL) ? '' : $prefillContact,
+            ],
+        ]);
     }
 
     public function store(Request $request): RedirectResponse

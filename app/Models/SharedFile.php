@@ -93,6 +93,12 @@ class SharedFile extends Model
             && $this->isSecurityApproved();
     }
 
+    public function isPreviewableFileAvailable(): bool
+    {
+        return $this->status === self::STATUS_ACTIVE
+            && ! $this->isExpiredByTime();
+    }
+
     public function isPasswordProtected(): bool
     {
         return ! empty($this->download_password_hash);

@@ -47,7 +47,7 @@
                     <div class="item">
                         <div>
                             <strong>{{ __('ui.exchange.expires_at') }}</strong>
-                            <div class="muted">{{ $file->expires_at?->format('Y-m-d H:i') ?: __('ui.common.not_available') }}</div>
+                            <div class="muted">{{ \App\Support\LocalizedDate::dateTime($file->expires_at) }}</div>
                         </div>
                         <span class="badge">{{ $file->isDownloadable() ? __('ui.common.active') : __('ui.statuses.expired') }}</span>
                     </div>

@@ -32,6 +32,9 @@ return [
         'receiver_not_found' => 'No registered user matched the receiver details.',
         'sent' => 'The file was sent through quick send successfully.',
     ],
+    'subscriptions' => [
+        'paid_purchase_disabled_for_launch' => 'Paid plan purchase is disabled for the initial launch until payment is finalized.',
+    ],
     'personal_storage' => [
         'disabled_by_plan' => 'Personal storage is not allowed on your current plan.',
         'stored' => 'The file was saved to your personal storage successfully.',
@@ -42,7 +45,12 @@ return [
         'folder_updated' => 'The folder name was updated successfully.',
         'folder_deleted' => 'The empty folder was deleted.',
         'folder_not_empty' => 'This folder is not empty. Move or remove its files and subfolders first.',
+        'folder_cycle' => 'A folder cannot be moved inside itself or one of its subfolders.',
         'moved_to_folder' => 'The file was placed in the selected folder.',
+        'bulk_moved_to_folder' => ':count files were moved to the selected folder.',
+        'bulk_removed_from_workspace' => ':count selected files were removed from your personal workspace.',
+        'file_renamed' => 'The file name was updated.',
+        'star_updated' => 'The file marker was updated.',
         'quota_reached' => 'Your personal storage quota is full. Current plan limit: :size MB.',
         'message_or_file_required' => 'For personal storage, choose a file or write a text note.',
     ],

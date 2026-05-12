@@ -8,6 +8,7 @@ use App\Support\PersonalStorageQuota;
 use App\Support\PlanPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -17,11 +18,17 @@ class ProfileController extends Controller
     public function edit(Request $request): View
     {
         $user = $request->user();
+        $storageProfile = PersonalStorageQuota::profileForUser($user);
+
+        if (PersonalStorageQuota::disableNoExpiryReceivingIfUnavailable($user, $storageProfile)) {
+            $user->refresh();
+            $storageProfile = PersonalStorageQuota::profileForUser($user);
+        }
 
         return view('profile.edit', [
             'user' => $user,
             'planProfile' => PlanPolicy::profileForUser($user),
-            'storageProfile' => PersonalStorageQuota::profileForUser($user),
+            'storageProfile' => $storageProfile,
         ]);
     }
 
@@ -36,6 +43,7 @@ class ProfileController extends Controller
             'mobile' => ['nullable', 'string', 'max:20'],
             'full_name' => ['nullable', 'string', 'max:120'],
             'allow_receive_no_expiry' => ['nullable', 'boolean'],
+            'avatar' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'current_password' => ['nullable', 'required_with:password', 'current_password'],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
         ]);
@@ -79,6 +87,14 @@ class ProfileController extends Controller
             $user->allow_receive_no_expiry = false;
         }
 
+        if ($user->allow_receive_no_expiry) {
+            $storageProfile = PersonalStorageQuota::profileForUser($user);
+
+            if (($storageProfile['is_full'] ?? false) || ! ($storageProfile['enabled'] ?? false)) {
+                $user->allow_receive_no_expiry = false;
+            }
+        }
+
         if ($emailChanged) {
             $user->email_verified_at = null;
         }
@@ -89,6 +105,14 @@ class ProfileController extends Controller
 
         if (! empty($validated['password'])) {
             $user->password = $validated['password'];
+        }
+
+        if ($request->hasFile('avatar')) {
+            if ($user->avatar) {
+                Storage::disk('public')->delete($user->avatar);
+            }
+
+            $user->avatar = $request->file('avatar')->store('avatars', 'public');
         }
 
         $user->save();

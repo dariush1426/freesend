@@ -37,6 +37,14 @@
                     <span class="badge">{{ __('ui.quick_send.expiry') }}</span>
                 </div>
             </div>
+            <div class="status" style="margin-top: 14px;">
+                <strong>{{ __('ui.quick_send.register_prompt_title') }}</strong>
+                <div class="muted" style="margin-top: 6px;">{{ __('ui.quick_send.register_prompt_body') }}</div>
+                <div class="actions" style="margin-top: 12px;">
+                    <a class="button primary" href="{{ route('register', ['name' => $result['sender_name'] ?? '', 'contact' => $result['sender_contact'] ?? '']) }}">{{ __('ui.quick_send.register_prompt_cta') }}</a>
+                    <a class="button" href="{{ route('login') }}">{{ __('ui.quick_send.open_login') }}</a>
+                </div>
+            </div>
         </section>
     @endif
 

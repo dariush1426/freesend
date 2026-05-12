@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 
 #[Fillable(['name', 'username', 'email', 'mobile', 'full_name', 'avatar', 'allow_receive_no_expiry', 'is_admin', 'password', 'email_verified_at', 'mobile_verified_at'])]
 #[Hidden(['password', 'remember_token'])]
@@ -92,5 +93,15 @@ class User extends Authenticatable
     public function subscriptionOrders(): HasMany
     {
         return $this->hasMany(SubscriptionOrder::class);
+    }
+
+    public function avatarUrl(): ?string
+    {
+        return $this->avatar ? Storage::disk('public')->url($this->avatar) : null;
+    }
+
+    public function displayInitial(): string
+    {
+        return mb_substr($this->full_name ?: $this->username, 0, 1) ?: '?';
     }
 }

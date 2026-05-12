@@ -77,7 +77,11 @@
                     @endphp
                     <a class="thread-card {{ $thread['unread'] > 0 ? 'unread' : '' }} {{ $threadActive ? 'active' : '' }}" href="{{ $threadHref }}">
                         <div class="thread-main">
-                            <span class="avatar">{{ $initial }}</span>
+                            @if($isStorageThread)
+                                <span class="avatar">{{ $initial }}</span>
+                            @else
+                                @include('partials.user-avatar', ['user' => $thread['user']])
+                            @endif
                             <div class="thread-meta">
                                 <strong>{{ $isStorageThread ? $name : $thread['user']->username }}</strong>
                                 @if(! $isStorageThread && $thread['user']->full_name)
@@ -98,7 +102,7 @@
                     </a>
                 @empty
                     <div class="empty-state">
-                        <span class="empty-icon">âŒ•</span>
+                        <span class="empty-icon">?</span>
                         <strong>{{ __('ui.exchange.empty_search_title') }}</strong>
                         <div class="muted">{{ __('ui.exchange.empty_search_body') }}</div>
                     </div>
@@ -113,7 +117,11 @@
             <div class="conversation-header">
                 <div class="thread-main">
                     <a class="button mobile-only" href="{{ route('inbox') }}">{{ __('ui.common.back') }}</a>
-                    <span class="avatar large">{{ $headerInitial }}</span>
+                    @if($isStorageConversation)
+                        <span class="avatar large">{{ $headerInitial }}</span>
+                    @else
+                        @include('partials.user-avatar', ['user' => $otherUser, 'class' => 'large'])
+                    @endif
                     <div class="meta-stack">
                         <h1 style="margin:0;">{{ $conversationName }}</h1>
                         <p class="muted" style="margin:0;">{{ $conversationSubline }}</p>
@@ -150,7 +158,7 @@
                                 <div class="item" style="align-items: flex-start; gap: 14px;">
                                     <div style="flex: 1; min-width: 0;">
                                         <strong>{{ $workspaceFile->original_name }}</strong>
-                                        <div class="muted">{{ $workspaceFile->readableSize() }} Â· {{ $workspaceFile->created_at?->diffForHumans() }}</div>
+                                        <div class="muted">{{ $workspaceFile->readableSize() }} &middot; {{ $workspaceFile->created_at?->diffForHumans() }}</div>
                                         @if($workspaceFile->getAttribute('workspace_folder_name'))
                                             <div class="muted" style="margin-top: 6px;">{{ __('ui.storage.in_folder', ['folder' => $workspaceFile->getAttribute('workspace_folder_name')]) }}</div>
                                         @endif
@@ -203,18 +211,18 @@
                             'name' => $file->original_name,
                             'size' => $file->readableSize(),
                             'extension' => $file->extension ?: __('ui.common.unknown'),
-                            'sent_at' => $message->created_at->format('Y-m-d H:i'),
-                            'expires_at' => $file->expires_at?->format('Y-m-d H:i') ?: __('ui.common.not_available'),
+                            'sent_at' => \App\Support\LocalizedDate::dateTime($message->created_at),
+                            'expires_at' => \App\Support\LocalizedDate::dateTime($file->expires_at),
                             'scan' => $scanState,
                             'download_state' => $message->downloaded_at ? __('ui.exchange.downloaded_yes') : __('ui.exchange.downloaded_no'),
                             'public_link_state' => $message->public_link_enabled ? __('ui.exchange.public_on') : __('ui.exchange.public_off'),
                         ];
                     @endphp
-                    <div class="message-row {{ $isMine ? 'mine' : 'theirs' }}">
+                    <div id="file-send-{{ $message->id }}" class="message-row {{ $isMine ? 'mine' : 'theirs' }} @if(($highlightedSendId ?? 0) === $message->id) message-row-highlight @endif" data-file-send-id="{{ $message->id }}">
                         <article class="message {{ $isMine ? 'mine' : 'theirs' }}">
                             <div class="message-header">
                                 <div>
-                                    <div class="muted">{{ $isStorageConversation ? $storageLabel : ($isMine ? __('ui.exchange.me') : $message->sender->username) }} Â· {{ $message->created_at->format('Y-m-d H:i') }}</div>
+                                    <div class="muted">{{ $isStorageConversation ? $storageLabel : ($isMine ? __('ui.exchange.me') : $message->sender->username) }} &middot; {{ \App\Support\LocalizedDate::dateTime($message->created_at) }}</div>
                                     @if($message->message)
                                         <p style="margin:10px 0 0;">{{ $message->message }}</p>
                                     @endif
@@ -231,31 +239,31 @@
                                         type="button"
                                         data-menu-toggle
                                         aria-label="{{ __('ui.common.more') }}"
-                                    >â‹®</button>
+                                    >&vellip;</button>
                                     <div class="message-menu" data-menu>
                                         @if($isDownloadable)
                                             <a class="message-menu-item" href="{{ route('file-sends.download', $message) }}">
-                                                <span>â†“</span>
+                                                <span>&darr;</span>
                                                 <span>{{ $isProtected ? __('ui.actions.unlock_download') : __('ui.actions.download') }}</span>
                                             </a>
                                         @endif
                                         @if($canPreviewNow)
                                             <a class="message-menu-item" href="{{ route('file-sends.preview', $message) }}" target="_blank" rel="noopener">
-                                                <span>â–£</span>
+                                                <span>&#9635;</span>
                                                 <span>{{ __('ui.actions.open_preview') }}</span>
                                             </a>
                                         @endif
                                         @if(($publicLinkFeatureEnabled ?? false) && $isMine)
                                             @if($message->public_link_enabled && $message->public_token)
                                                 <button class="message-menu-item" type="button" data-copy-link="{{ route('public-files.download', $message->public_token) }}">
-                                                    <span>âŒ</span>
+                                                    <span>&#128279;</span>
                                                     <span>{{ __('ui.actions.copy_public_link') }}</span>
                                                 </button>
                                                 <form method="post" action="{{ route('file-sends.public-link.update', $message) }}">
                                                     @csrf
                                                     <input type="hidden" name="action" value="disable">
                                                     <button type="submit">
-                                                        <span>âŠ˜</span>
+                                                        <span>&#8856;</span>
                                                         <span>{{ __('ui.actions.disable_public_link') }}</span>
                                                     </button>
                                                 </form>
@@ -263,7 +271,7 @@
                                                     @csrf
                                                     <input type="hidden" name="action" value="regenerate">
                                                     <button type="submit">
-                                                        <span>â†»</span>
+                                                        <span>&#8635;</span>
                                                         <span>{{ __('ui.actions.regenerate_public_link') }}</span>
                                                     </button>
                                                 </form>
@@ -272,7 +280,7 @@
                                                     @csrf
                                                     <input type="hidden" name="action" value="enable">
                                                     <button type="submit">
-                                                        <span>ï¼‹</span>
+                                                        <span>+</span>
                                                         <span>{{ __('ui.actions.enable_public_link') }}</span>
                                                     </button>
                                                 </form>
@@ -285,7 +293,7 @@
                             <div class="exchange-card">
                                 @include('partials.file-preview-card', ['send' => $message, 'previewPolicy' => $previewPolicy, 'unlockedFileIds' => $unlockedFileIds])
                                 <div class="exchange-card-main">
-                                    <div class="muted">{{ __('ui.file_types.'.$file->category()) }} Â· {{ $file->readableSize() }}</div>
+                                    <div class="muted">{{ __('ui.file_types.'.$file->category()) }} &middot; {{ $file->readableSize() }}</div>
                                     @if($previewType === 'other')
                                         <div class="muted">{{ __('ui.exchange.preview_not_available') }}</div>
                                     @elseif(! $canPreviewByPolicy)
@@ -321,7 +329,7 @@
                     </div>
                 @empty
                     <div class="empty-state">
-                        <span class="empty-icon">â—Œ</span>
+                        <span class="empty-icon">o</span>
                         <strong>{{ $isStorageConversation ? (app()->getLocale() === 'fa' ? 'هنوز فایلی به فضای شخصی نفرستاده‌اید' : 'No file has been sent to your personal storage yet') : __('ui.exchange.exchange_empty_title') }}</strong>
                         <div class="muted">{{ $isStorageConversation ? (app()->getLocale() === 'fa' ? 'با ارسال به فضای ذخیره‌سازی، این تبادل مثل یک گفتگو پر می‌شود.' : 'Once you send to storage, this exchange will fill like a normal conversation.') : __('ui.exchange.exchange_empty_body') }}</div>
                         <a class="button primary" href="{{ $primaryCtaHref }}">{{ $primaryCtaLabel }}</a>
@@ -338,7 +346,7 @@
                     <h2 style="margin-bottom: 6px;">{{ __('ui.exchange.info_title') }}</h2>
                     <p id="file-detail-name" class="muted" style="margin: 0;">{{ __('ui.exchange.info_unavailable') }}</p>
                 </div>
-                <button id="file-detail-close" class="icon-button" type="button" aria-label="{{ __('ui.common.close') }}">Ã—</button>
+                <button id="file-detail-close" class="icon-button" type="button" aria-label="{{ __('ui.common.close') }}">&times;</button>
             </div>
             <div class="detail-grid">
                 <div><strong>{{ __('ui.exchange.size') }}</strong><span id="file-detail-size"></span></div>
@@ -362,6 +370,7 @@
         const menus = document.querySelectorAll('[data-menu]');
         const detailModal = document.getElementById('file-detail-modal');
         const detailClose = document.getElementById('file-detail-close');
+        const highlightedSendId = @json((int) ($highlightedSendId ?? 0));
 
         const setTemporaryLabel = (button, text) => {
             const original = button.textContent.trim() || copyDefaultLabel;
@@ -438,5 +447,18 @@
                 closeMenus();
             }
         });
+
+        if (highlightedSendId > 0) {
+            window.setTimeout(() => {
+                const highlightedMessage = document.querySelector(`[data-file-send-id="${highlightedSendId}"]`);
+
+                if (!highlightedMessage) {
+                    return;
+                }
+
+                highlightedMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                highlightedMessage.classList.add('message-row-highlight-active');
+            }, 160);
+        }
     </script>
 @endsection

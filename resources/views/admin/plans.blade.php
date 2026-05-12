@@ -288,7 +288,7 @@
                                 <span class="muted">{{ __('admin.plans.current_plan') }}: {{ $activeSubscription->plan?->name ?? '-' }}</span>
                                 <span class="muted">
                                     {{ __('admin.plans.subscription_until') }}:
-                                    {{ $activeSubscription->ends_at?->format('Y-m-d H:i') ?? __('admin.plans.subscription_no_limit') }}
+                                    {{ $activeSubscription->ends_at ? \App\Support\LocalizedDate::dateTime($activeSubscription->ends_at) : __('admin.plans.subscription_no_limit') }}
                                 </span>
                             @else
                                 <span class="muted">{{ __('admin.plans.no_subscription') }}</span>

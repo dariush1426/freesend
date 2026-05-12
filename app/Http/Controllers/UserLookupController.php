@@ -51,6 +51,12 @@ class UserLookupController extends Controller
     {
         $planProfile = PlanPolicy::profileForUser($user);
         $storageProfile = PersonalStorageQuota::profileForUser($user);
+
+        if (PersonalStorageQuota::disableNoExpiryReceivingIfUnavailable($user, $storageProfile)) {
+            $user->refresh();
+            $storageProfile = PersonalStorageQuota::profileForUser($user);
+        }
+
         $storageEnabled = (bool) ($planProfile['allow_personal_storage'] ?? false);
         $storageFull = $storageEnabled
             && $storageProfile['quota_bytes'] !== null

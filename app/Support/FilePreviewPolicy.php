@@ -42,7 +42,7 @@ class FilePreviewPolicy
             return false;
         }
 
-        if (! $file->isDownloadable()) {
+        if (! $file->isPreviewableFileAvailable()) {
             return false;
         }
 

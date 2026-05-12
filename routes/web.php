@@ -30,12 +30,31 @@ use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\SubscriptionPaymentController;
 use App\Http\Controllers\Admin\SubscriptionSubscriberController;
 use App\Http\Controllers\UserLookupController;
+use App\Models\Setting;
+use App\Models\SubscriptionPlan;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return auth()->check()
-        ? redirect()->route('dashboard')
-        : redirect()->route('login');
+    if (auth()->check()) {
+        return redirect()->route('dashboard');
+    }
+
+    return view('welcome', [
+        'appName' => Setting::getValue('app_display_name', config('app.name', 'FreeSend')),
+        'quickSendEnabled' => Setting::getValue('quick_send_enabled', 'true') === 'true',
+        'landing' => collect(Setting::DEFAULTS)
+            ->filter(fn (string $value, string $key): bool => str_starts_with($key, 'landing_'))
+            ->mapWithKeys(fn (string $value, string $key): array => [$key => Setting::getValue($key, $value)])
+            ->all(),
+        'plans' => SubscriptionPlan::query()
+            ->where('is_active', true)
+            ->orderByDesc('is_default')
+            ->orderBy('sort_order')
+            ->orderBy('price_amount')
+            ->orderBy('name')
+            ->limit(3)
+            ->get(),
+    ]);
 });
 
 Route::middleware('guest')->group(function (): void {
@@ -65,6 +84,7 @@ Route::get('/p/{token}/preview', [PublicFileDownloadController::class, 'preview'
 Route::get('/manifest.webmanifest', [PwaController::class, 'manifest'])->name('pwa.manifest');
 Route::get('/sw.js', [PwaController::class, 'serviceWorker'])->name('pwa.sw');
 Route::get('/pwa/logo/{variant}', [PwaController::class, 'logo'])->name('pwa.logo');
+Route::get('/landing/asset/{slot}', [PwaController::class, 'landingAsset'])->name('landing.asset');
 Route::get('/locale/{locale}', LocaleController::class)->name('locale.switch');
 Route::get('/subscriptions/payments/zibal/callback', [SubscriptionPaymentController::class, 'zibalCallback'])
     ->name('subscriptions.payments.zibal.callback');
@@ -75,14 +95,18 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
     Route::get('/subscriptions/upgrade', [SubscriptionController::class, 'index'])->name('subscriptions.upgrade');
     Route::post('/subscriptions/{plan}/purchase', [SubscriptionController::class, 'purchase'])->name('subscriptions.purchase');
-    Route::get('/storage', [PersonalStorageController::class, 'index'])->name('storage.index');
-    Route::post('/storage/folders', [PersonalStorageController::class, 'storeFolder'])->name('storage.folders.store');
-    Route::patch('/storage/folders/{folder}', [PersonalStorageController::class, 'updateFolder'])->name('storage.folders.update');
-    Route::delete('/storage/folders/{folder}', [PersonalStorageController::class, 'destroyFolder'])->name('storage.folders.destroy');
-    Route::get('/storage/{file}/preview', [PersonalStorageController::class, 'preview'])->name('storage.preview');
-    Route::get('/storage/{file}/download', [PersonalStorageController::class, 'download'])->name('storage.download');
-    Route::patch('/storage/{file}/folder', [PersonalStorageController::class, 'moveToFolder'])->name('storage.folder.update');
-    Route::delete('/storage/{file}', [PersonalStorageController::class, 'destroy'])->name('storage.destroy');
+    Route::get('/personal-storage', [PersonalStorageController::class, 'index'])->name('storage.index');
+    Route::post('/personal-storage/folders', [PersonalStorageController::class, 'storeFolder'])->name('storage.folders.store');
+    Route::patch('/personal-storage/folders/{folder}', [PersonalStorageController::class, 'updateFolder'])->name('storage.folders.update');
+    Route::delete('/personal-storage/folders/{folder}', [PersonalStorageController::class, 'destroyFolder'])->name('storage.folders.destroy');
+    Route::patch('/personal-storage/bulk/folder', [PersonalStorageController::class, 'bulkMoveToFolder'])->name('storage.bulk.folder');
+    Route::delete('/personal-storage/bulk', [PersonalStorageController::class, 'bulkDestroy'])->name('storage.bulk.destroy');
+    Route::get('/personal-storage/{file}/preview', [PersonalStorageController::class, 'preview'])->name('storage.preview');
+    Route::get('/personal-storage/{file}/download', [PersonalStorageController::class, 'download'])->name('storage.download');
+    Route::patch('/personal-storage/{file}/folder', [PersonalStorageController::class, 'moveToFolder'])->name('storage.folder.update');
+    Route::patch('/personal-storage/{file}/rename', [PersonalStorageController::class, 'renameFile'])->name('storage.rename');
+    Route::patch('/personal-storage/{file}/star', [PersonalStorageController::class, 'toggleStar'])->name('storage.star');
+    Route::delete('/personal-storage/{file}', [PersonalStorageController::class, 'destroy'])->name('storage.destroy');
     Route::get('/send', [FileSendController::class, 'create'])->name('files.create');
     Route::post('/send', [FileSendController::class, 'store'])->name('files.store');
     Route::post('/uploads/chunk/start', [ChunkUploadController::class, 'start'])->name('uploads.chunk.start');

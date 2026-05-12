@@ -56,6 +56,25 @@ class PersonalStorageQuota
         return ($profile['used_bytes'] + $incomingSize) <= $profile['quota_bytes'];
     }
 
+    public static function disableNoExpiryReceivingIfUnavailable(User $user, ?array $profile = null): bool
+    {
+        if (! (bool) $user->allow_receive_no_expiry) {
+            return false;
+        }
+
+        $profile ??= self::profileForUser($user);
+
+        if (($profile['enabled'] ?? false) && ! ($profile['is_full'] ?? false)) {
+            return false;
+        }
+
+        $user->forceFill([
+            'allow_receive_no_expiry' => false,
+        ])->save();
+
+        return true;
+    }
+
     public static function isNearCapacity(User $user, int $thresholdPercent = self::NEAR_CAPACITY_THRESHOLD_PERCENT): bool
     {
         $profile = self::profileForUser($user);

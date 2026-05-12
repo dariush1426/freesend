@@ -32,7 +32,7 @@
                 <div>
                     <strong>{{ __('ui.public_download.public_link_expire') }}</strong>
                     <div class="muted">
-                        {{ $fileSend->public_link_expires_at ? $fileSend->public_link_expires_at->format('Y-m-d H:i') : __('ui.public_download.no_expiry') }}
+                        {{ $fileSend->public_link_expires_at ? \App\Support\LocalizedDate::dateTime($fileSend->public_link_expires_at) : __('ui.public_download.no_expiry') }}
                     </div>
                 </div>
                 <span class="badge">{{ $fileSend->public_link_enabled ? __('ui.common.enabled') : __('ui.common.disabled') }}</span>
